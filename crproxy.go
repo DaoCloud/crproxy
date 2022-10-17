@@ -87,7 +87,7 @@ func (c *CRProxy) ping(host string) error {
 }
 
 func (c *CRProxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		c.responseErrorCode(rw, http.StatusForbidden)
 		return
 	}
@@ -154,9 +154,11 @@ func (c *CRProxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	}
 	rw.WriteHeader(resp.StatusCode)
 
-	buf := c.bytesPool.Get().([]byte)
-	defer c.bytesPool.Put(buf)
-	io.CopyBuffer(rw, resp.Body, buf)
+	if r.Method != http.MethodHead {
+		buf := c.bytesPool.Get().([]byte)
+		defer c.bytesPool.Put(buf)
+		io.CopyBuffer(rw, resp.Body, buf)
+	}
 }
 
 func getHostAndWantPath(s string) (host, path, image string, ok bool) {
