@@ -1,0 +1,28 @@
+version: 0.1
+log:
+  accesslog:
+    disabled: true
+storage:
+  cache:
+    blobdescriptor: inmemory
+  filesystem:
+    rootdirectory: "/var/lib/registry"
+  maintenance:
+    uploadpurging:
+      enabled: false
+    readonly:
+      enabled: true
+http:
+  addr: :5000
+  headers:
+    X-Content-Type-Options: [nosniff]
+
+health:
+  storagedriver:
+    enabled: false
+
+validation:
+  disabled: true
+
+proxy:
+  remoteurl: http://crproxy:8080
