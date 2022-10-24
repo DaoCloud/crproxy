@@ -1,0 +1,25 @@
+name: Build
+on:
+  push:
+    tags: 
+      - v*
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+    - name: Set up Go
+      uses: actions/setup-go@v2
+      with:
+        go-version: 1.19
+    - name: Build Cross Platform
+      uses: wzshiming/action-go-build-cross-plantform@v1
+    - name: Upload Release Assets
+      uses: wzshiming/action-upload-release-assets@v1
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    - name: Log into registry
+      run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+    - name: Upload Release Images
+      uses: wzshiming/action-upload-release-images@v1
