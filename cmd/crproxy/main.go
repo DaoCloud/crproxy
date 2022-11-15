@@ -79,6 +79,7 @@ func main() {
 		crproxy.WithBaseClient(cli),
 		crproxy.WithLogger(logger),
 		crproxy.WithUserAndPass(userAndPass),
+		crproxy.WithMaxClientSizeForEachRegistry(16),
 		crproxy.WithDomainAlias(map[string]string{
 			"docker.io": "registry-1.docker.io",
 		}),

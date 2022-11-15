@@ -11,6 +11,7 @@ import (
 	"github.com/distribution/distribution/v3/registry/client/auth"
 	"github.com/distribution/distribution/v3/registry/client/auth/challenge"
 	"github.com/distribution/distribution/v3/registry/client/transport"
+	"github.com/wzshiming/lru"
 )
 
 var (
@@ -24,7 +25,8 @@ type Logger interface {
 type CRProxy struct {
 	baseClient       *http.Client
 	challengeManager challenge.Manager
-	clientset        map[string]map[string]*http.Client
+	clientset        map[string]*lru.LRU[string, *http.Client]
+	clientSize       int
 	domainAlias      map[string]string
 	userAndPass      map[string]Userpass
 	basicCredentials *basicCredentials
@@ -60,10 +62,17 @@ func WithDomainAlias(domainAlias map[string]string) Option {
 	}
 }
 
+func WithMaxClientSizeForEachRegistry(clientSize int) Option {
+	return func(c *CRProxy) {
+		c.clientSize = clientSize
+	}
+}
+
 func NewCRProxy(opts ...Option) (*CRProxy, error) {
 	c := &CRProxy{
 		challengeManager: challenge.NewSimpleManager(),
-		clientset:        map[string]map[string]*http.Client{},
+		clientset:        map[string]*lru.LRU[string, *http.Client]{},
+		clientSize:       16,
 		baseClient:       http.DefaultClient,
 		pingURL: func(host string) string {
 			return "https://" + host + prefix
@@ -90,8 +99,11 @@ func NewCRProxy(opts ...Option) (*CRProxy, error) {
 func (c *CRProxy) getClientset(host string, image string) *http.Client {
 	c.mux.Lock()
 	defer c.mux.Unlock()
-	if c.clientset[host] != nil && c.clientset[host][image] != nil {
-		return c.clientset[host][image]
+	if c.clientset[host] != nil {
+		client, ok := c.clientset[host].Get(image)
+		if ok {
+			return client
+		}
 	}
 
 	if c.logger != nil {
@@ -109,9 +121,14 @@ func (c *CRProxy) getClientset(host string, image string) *http.Client {
 		Jar:           c.baseClient.Jar,
 	}
 	if c.clientset[host] == nil {
-		c.clientset[host] = map[string]*http.Client{}
+		c.clientset[host] = lru.NewLRU(c.clientSize, func(image string, client *http.Client) {
+			if c.logger != nil {
+				c.logger.Println("evicted client", host, image)
+			}
+			client.CloseIdleConnections()
+		})
 	}
-	c.clientset[host][image] = client
+	c.clientset[host].Put(image, client)
 	return client
 }
 
