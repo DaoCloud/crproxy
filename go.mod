@@ -5,6 +5,7 @@ go 1.19
 require (
 	github.com/distribution/distribution/v3 v3.0.0-20220907155224-78b9c98c5c31
 	github.com/gorilla/handlers v1.5.1
+	github.com/spf13/pflag v1.0.3
 )
 
 require (

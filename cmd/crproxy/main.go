@@ -2,21 +2,48 @@ package main
 
 import (
 	"context"
-	"flag"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/gorilla/handlers"
+	"github.com/spf13/pflag"
 	"github.com/wzshiming/crproxy"
 )
 
 var address string
+var userpass []string
 
 func init() {
-	flag.StringVar(&address, "a", ":8080", "listen on the address")
-	flag.Parse()
+	pflag.StringSliceVarP(&userpass, "user", "u", nil, "host and username and password -u user:pwd@host")
+	pflag.StringVarP(&address, "address", "a", ":8080", "listen on the address")
+	pflag.Parse()
+}
+
+func toUserAndPass(userpass []string) (map[string]crproxy.Userpass, error) {
+	bc := map[string]crproxy.Userpass{}
+	for _, up := range userpass {
+		s := strings.SplitN(up, "@", 3)
+		if len(s) != 2 {
+			return nil, fmt.Errorf("invalid userpass %q", up)
+		}
+
+		u := strings.SplitN(s[0], ":", 3)
+		if len(s) != 2 {
+			return nil, fmt.Errorf("invalid userpass %q", up)
+		}
+		host := s[1]
+		user := u[0]
+		pwd := u[1]
+		bc[host] = crproxy.Userpass{
+			Username: user,
+			Password: pwd,
+		}
+	}
+	return bc, nil
 }
 
 func main() {
@@ -39,10 +66,28 @@ func main() {
 		},
 	}
 
-	crp := crproxy.NewCRProxy(
+	var userAndPass map[string]crproxy.Userpass
+	if len(userpass) != 0 {
+		bc, err := toUserAndPass(userpass)
+		if err != nil {
+			logger.Println("failed to toBasicCredentials:", err)
+			return
+		}
+		userAndPass = bc
+	}
+	crp, err := crproxy.NewCRProxy(
 		crproxy.WithBaseClient(cli),
 		crproxy.WithLogger(logger),
+		crproxy.WithUserAndPass(userAndPass),
+		crproxy.WithDomainAlias(map[string]string{
+			"docker.io": "registry-1.docker.io",
+		}),
 	)
+	if err != nil {
+		logger.Println("failed to NewCRProxy:", err)
+		os.Exit(1)
+	}
+
 	mux.Handle("/v2/", crp)
 	server := http.Server{
 		BaseContext: func(listener net.Listener) context.Context {
@@ -52,7 +97,7 @@ func main() {
 		Addr:    address,
 	}
 
-	err := server.ListenAndServe()
+	err = server.ListenAndServe()
 	if err != nil {
 		logger.Println("failed to ListenAndServe:", err)
 		os.Exit(1)

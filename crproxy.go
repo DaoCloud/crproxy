@@ -25,6 +25,9 @@ type CRProxy struct {
 	baseClient       *http.Client
 	challengeManager challenge.Manager
 	clientset        map[string]map[string]*http.Client
+	domainAlias      map[string]string
+	userAndPass      map[string]Userpass
+	basicCredentials *basicCredentials
 	mux              sync.Mutex
 	bytesPool        sync.Pool
 	logger           Logger
@@ -45,7 +48,19 @@ func WithLogger(logger Logger) Option {
 	}
 }
 
-func NewCRProxy(opts ...Option) *CRProxy {
+func WithUserAndPass(userAndPass map[string]Userpass) Option {
+	return func(c *CRProxy) {
+		c.userAndPass = userAndPass
+	}
+}
+
+func WithDomainAlias(domainAlias map[string]string) Option {
+	return func(c *CRProxy) {
+		c.domainAlias = domainAlias
+	}
+}
+
+func NewCRProxy(opts ...Option) (*CRProxy, error) {
 	c := &CRProxy{
 		challengeManager: challenge.NewSimpleManager(),
 		clientset:        map[string]map[string]*http.Client{},
@@ -62,7 +77,14 @@ func NewCRProxy(opts ...Option) *CRProxy {
 	for _, opt := range opts {
 		opt(c)
 	}
-	return c
+	if len(c.userAndPass) != 0 {
+		bc, err := newBasicCredentials(c.userAndPass, c.getDomainAlias)
+		if err != nil {
+			return nil, err
+		}
+		c.basicCredentials = bc
+	}
+	return c, nil
 }
 
 func (c *CRProxy) getClientset(host string, image string) *http.Client {
@@ -75,7 +97,11 @@ func (c *CRProxy) getClientset(host string, image string) *http.Client {
 	if c.logger != nil {
 		c.logger.Println("cache client", host, image)
 	}
-	authHandler := auth.NewTokenHandler(nil, nil, image, "pull")
+	var credentialStore auth.CredentialStore
+	if c.basicCredentials != nil {
+		credentialStore = c.basicCredentials
+	}
+	authHandler := auth.NewTokenHandler(nil, credentialStore, image, "pull")
 	client := &http.Client{
 		Transport:     transport.NewTransport(c.baseClient.Transport, auth.NewAuthorizer(c.challengeManager, authHandler)),
 		CheckRedirect: c.baseClient.CheckRedirect,
@@ -145,17 +171,23 @@ func (c *CRProxy) doWithAuth(cli *http.Client, r *http.Request, host string) (*h
 	}
 
 	if resp.StatusCode == http.StatusUnauthorized {
-		resp.Body.Close()
-
 		err = c.ping(host)
 		if err != nil {
-			return nil, err
+			if c.logger != nil {
+				c.logger.Println("failed to ping", host, err)
+			}
+			return resp, nil
 		}
 
-		resp, err = c.do(cli, r)
-		if err != nil {
-			return nil, err
+		resp0, err0 := c.do(cli, r)
+		if err0 != nil {
+			if c.logger != nil {
+				c.logger.Println("failed to redo", host, err)
+			}
+			return resp, nil
 		}
+		resp.Body.Close()
+		resp = resp0
 	}
 	return resp, nil
 }
@@ -175,7 +207,7 @@ func (c *CRProxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	host, path, image, ok := getHostAndWantPath(oriPath)
+	host, path, image, ok := c.getHostAndWantPath(oriPath)
 	if !ok ||
 		!isDomainName(host) {
 		errcode.ServeJSON(rw, errcode.ErrorCodeDenied)
@@ -221,7 +253,18 @@ func (c *CRProxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func getHostAndWantPath(s string) (host, path, image string, ok bool) {
+func (c *CRProxy) getDomainAlias(host string) string {
+	if c.domainAlias == nil {
+		return host
+	}
+	h, ok := c.domainAlias[host]
+	if !ok {
+		return host
+	}
+	return h
+}
+
+func (c *CRProxy) getHostAndWantPath(s string) (host, path, image string, ok bool) {
 	s = strings.TrimLeft(s, prefix)
 	i := strings.IndexByte(s, '/')
 	if i <= 0 {
@@ -233,10 +276,7 @@ func getHostAndWantPath(s string) (host, path, image string, ok bool) {
 		return "", "", "", false
 	}
 
-	// docker.io/library/golang => registry-1.docker.io/library/golang
-	if host == "docker.io" {
-		host = "registry-1.docker.io"
-	}
+	host = c.getDomainAlias(host)
 	i = strings.LastIndexByte(tail, '/')
 	i = strings.LastIndexByte(tail[:i], '/')
 	image = tail[:i]
