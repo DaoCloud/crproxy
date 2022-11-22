@@ -83,6 +83,13 @@ func main() {
 		crproxy.WithDomainAlias(map[string]string{
 			"docker.io": "registry-1.docker.io",
 		}),
+		crproxy.WithPathInfoModifyFunc(func(info *crproxy.PathInfo) *crproxy.PathInfo {
+			// docker.io/busybox => docker.io/library/busybox
+			if info.Host == "registry-1.docker.io" && !strings.Contains(info.Image, "/") {
+				info.Image = "library/" + info.Image
+			}
+			return info
+		}),
 	)
 	if err != nil {
 		logger.Println("failed to NewCRProxy:", err)

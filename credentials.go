@@ -17,12 +17,12 @@ type basicCredentials struct {
 	credentials map[string]Userpass
 }
 
-func newBasicCredentials(cred map[string]Userpass, domainAlias func(string) string) (*basicCredentials, error) {
+func newBasicCredentials(cred map[string]Userpass, domainAlias func(string) string, hostScheme func(string) string) (*basicCredentials, error) {
 	bc := &basicCredentials{
 		credentials: map[string]Userpass{},
 	}
 	for domain, c := range cred {
-		urls, err := getAuthURLs("https://"+domain, domainAlias)
+		urls, err := getAuthURLs(hostScheme(domain)+"://"+domain, domainAlias)
 		if err != nil {
 			return nil, err
 		}

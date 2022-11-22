@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/textproto"
 	"strings"
 	"sync"
 
@@ -27,13 +28,14 @@ type CRProxy struct {
 	challengeManager challenge.Manager
 	clientset        map[string]*lru.LRU[string, *http.Client]
 	clientSize       int
+	modify           func(info *PathInfo) *PathInfo
+	insecureDomain   map[string]struct{}
 	domainAlias      map[string]string
 	userAndPass      map[string]Userpass
 	basicCredentials *basicCredentials
 	mux              sync.Mutex
 	bytesPool        sync.Pool
 	logger           Logger
-	pingURL          func(host string) string
 }
 
 type Option func(c *CRProxy)
@@ -62,6 +64,12 @@ func WithDomainAlias(domainAlias map[string]string) Option {
 	}
 }
 
+func WithPathInfoModifyFunc(modify func(info *PathInfo) *PathInfo) Option {
+	return func(c *CRProxy) {
+		c.modify = modify
+	}
+}
+
 func WithMaxClientSizeForEachRegistry(clientSize int) Option {
 	return func(c *CRProxy) {
 		c.clientSize = clientSize
@@ -74,9 +82,6 @@ func NewCRProxy(opts ...Option) (*CRProxy, error) {
 		clientset:        map[string]*lru.LRU[string, *http.Client]{},
 		clientSize:       16,
 		baseClient:       http.DefaultClient,
-		pingURL: func(host string) string {
-			return "https://" + host + prefix
-		},
 		bytesPool: sync.Pool{
 			New: func() interface{} {
 				return make([]byte, 32*1024)
@@ -87,13 +92,27 @@ func NewCRProxy(opts ...Option) (*CRProxy, error) {
 		opt(c)
 	}
 	if len(c.userAndPass) != 0 {
-		bc, err := newBasicCredentials(c.userAndPass, c.getDomainAlias)
+		bc, err := newBasicCredentials(c.userAndPass, c.getDomainAlias, c.getScheme)
 		if err != nil {
 			return nil, err
 		}
 		c.basicCredentials = bc
 	}
 	return c, nil
+}
+
+func (c *CRProxy) pingURL(host string) string {
+	return c.getScheme(host) + "://" + host + prefix
+}
+
+func (c *CRProxy) getScheme(host string) string {
+	if c.insecureDomain != nil {
+		_, ok := c.insecureDomain[host]
+		if ok {
+			return "http"
+		}
+	}
+	return "https"
 }
 
 func (c *CRProxy) getClientset(host string, image string) *http.Client {
@@ -224,24 +243,36 @@ func (c *CRProxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	host, path, image, ok := c.getHostAndWantPath(oriPath)
-	if !ok ||
-		!isDomainName(host) {
+	info, ok := ParseOriginPathInfo(oriPath)
+	if !ok {
 		errcode.ServeJSON(rw, errcode.ErrorCodeDenied)
 		return
 	}
+	info.Host = c.getDomainAlias(info.Host)
 
-	r.RequestURI = ""
-	r.Host = host
-	r.URL.Host = host
-	r.URL.Scheme = "https"
-	r.URL.Path = path
+	if c.modify != nil {
+		info = c.modify(info)
+	}
 
-	cli := c.getClientset(host, image)
-	resp, err := c.doWithAuth(cli, r, host)
+	path, err := info.Path()
 	if err != nil {
 		if c.logger != nil {
-			c.logger.Println("failed to request", host, image, err)
+			c.logger.Println("failed to get path", err)
+		}
+		errcode.ServeJSON(rw, errcode.ErrorCodeUnknown)
+		return
+	}
+	r.RequestURI = ""
+	r.Host = info.Host
+	r.URL.Host = info.Host
+	r.URL.Scheme = c.getScheme(info.Host)
+	r.URL.Path = path
+
+	cli := c.getClientset(info.Host, info.Image)
+	resp, err := c.doWithAuth(cli, r, info.Host)
+	if err != nil {
+		if c.logger != nil {
+			c.logger.Println("failed to request", info.Host, info.Image, err)
 		}
 		errcode.ServeJSON(rw, errcode.ErrorCodeUnknown)
 		return
@@ -259,7 +290,8 @@ func (c *CRProxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 
 	header := rw.Header()
 	for k, v := range resp.Header {
-		header[k] = v
+		key := textproto.CanonicalMIMEHeaderKey(k)
+		header[key] = v
 	}
 	rw.WriteHeader(resp.StatusCode)
 
@@ -281,34 +313,62 @@ func (c *CRProxy) getDomainAlias(host string) string {
 	return h
 }
 
-func (c *CRProxy) getHostAndWantPath(s string) (host, path, image string, ok bool) {
-	s = strings.TrimLeft(s, prefix)
-	i := strings.IndexByte(s, '/')
+type PathInfo struct {
+	Host  string
+	Image string
+
+	TagsList  bool
+	Manifests string
+	Blobs     string
+}
+
+func (p PathInfo) Path() (string, error) {
+	if p.TagsList {
+		return prefix + p.Image + "/tags/list", nil
+	}
+	if p.Manifests != "" {
+		return prefix + p.Image + "/manifests/" + p.Manifests, nil
+	}
+	if p.Blobs != "" {
+		return prefix + p.Image + "/blobs/" + p.Blobs, nil
+	}
+	return "", fmt.Errorf("unknow kind %#v", p)
+}
+
+func ParseOriginPathInfo(path string) (*PathInfo, bool) {
+	path = strings.TrimLeft(path, prefix)
+	i := strings.IndexByte(path, '/')
 	if i <= 0 {
-		return "", "", "", false
+		return nil, false
 	}
-	host = s[:i]
-	tail := s[i+1:]
-	if !strings.Contains(host, ".") {
-		return "", "", "", false
+	host := path[:i]
+	tail := path[i+1:]
+	if !isDomainName(host) {
+		return nil, false
 	}
 
-	host = c.getDomainAlias(host)
-	i = strings.LastIndexByte(tail, '/')
-	i = strings.LastIndexByte(tail[:i], '/')
-	image = tail[:i]
+	tails := strings.Split(tail, "/")
+	if len(tails) < 3 {
+		return nil, false
+	}
+	image := strings.Join(tails[:len(tails)-2], "/")
 	if image == "" {
-		return "", "", "", false
+		return nil, false
 	}
 
-	// docker.io/golang => docker.io/library/golang
-	if host == "registry-1.docker.io" && !strings.Contains(image, "/") {
-		image = "library/" + image
-		tail = "library/" + tail
+	info := &PathInfo{
+		Host:  host,
+		Image: image,
 	}
-
-	path = prefix + tail
-	return host, path, image, true
+	switch tails[len(tails)-2] {
+	case "tags":
+		info.TagsList = tails[len(tails)-1] == "list"
+	case "manifests":
+		info.Manifests = tails[len(tails)-1]
+	case "blobs":
+		info.Blobs = tails[len(tails)-1]
+	}
+	return info, true
 }
 
 // isDomainName checks if a string is a presentation-format domain name
