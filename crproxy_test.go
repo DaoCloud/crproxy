@@ -50,3 +50,37 @@ func TestParseOriginPathInfo(t *testing.T) {
 		})
 	}
 }
+
+func Test_addPrefixToImageForPagination(t *testing.T) {
+	type args struct {
+		oldLink string
+		host    string
+	}
+	tests := []struct {
+		name string
+		args args
+		want string
+	}{
+		{
+			args: args{
+				oldLink: "</v2/image/tags/list>; ref=other",
+				host:    "prefix",
+			},
+			want: "</v2/prefix/image/tags/list>; ref=other",
+		},
+		{
+			args: args{
+				oldLink: "<http://domain/v2/image/tags/list>; ref=other",
+				host:    "prefix",
+			},
+			want: "</v2/prefix/image/tags/list>; ref=other",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := addPrefixToImageForPagination(tt.args.oldLink, tt.args.host); got != tt.want {
+				t.Errorf("addPrefixToImageForPagination() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

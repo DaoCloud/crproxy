@@ -284,7 +284,7 @@ func (c *CRProxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	if resp.StatusCode == http.StatusOK {
 		oldLink := resp.Header.Get("Link")
 		if oldLink != "" {
-			resp.Header.Set("Link", strings.Replace(oldLink, path, oriPath, 1))
+			resp.Header.Set("Link", addPrefixToImageForPagination(oldLink, info.Host))
 		}
 	}
 
@@ -311,6 +311,19 @@ func (c *CRProxy) getDomainAlias(host string) string {
 		return host
 	}
 	return h
+}
+
+func addPrefixToImageForPagination(oldLink string, host string) string {
+	linkAndRel := strings.SplitN(oldLink, ";", 2)
+	if len(linkAndRel) != 2 {
+		return oldLink
+	}
+	linkURL := strings.SplitN(strings.Trim(linkAndRel[0], "<>"), "/v2/", 2)
+	if len(linkURL) != 2 {
+		return oldLink
+	}
+	mirrorPath := prefix + host + "/" + linkURL[1]
+	return fmt.Sprintf("<%s>;%s", mirrorPath, linkAndRel[1])
 }
 
 type PathInfo struct {
