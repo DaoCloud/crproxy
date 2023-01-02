@@ -7,16 +7,19 @@ import (
 	"net/textproto"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/distribution/distribution/v3/registry/api/errcode"
 	"github.com/distribution/distribution/v3/registry/client/auth"
 	"github.com/distribution/distribution/v3/registry/client/auth/challenge"
 	"github.com/distribution/distribution/v3/registry/client/transport"
+	"github.com/wzshiming/geario"
 	"github.com/wzshiming/lru"
 )
 
 var (
-	prefix = "/v2/"
+	prefix             = "/v2/"
+	speedLimitDuration = time.Second
 )
 
 type Logger interface {
@@ -24,21 +27,35 @@ type Logger interface {
 }
 
 type CRProxy struct {
-	baseClient       *http.Client
-	challengeManager challenge.Manager
-	clientset        map[string]*lru.LRU[string, *http.Client]
-	clientSize       int
-	modify           func(info *PathInfo) *PathInfo
-	insecureDomain   map[string]struct{}
-	domainAlias      map[string]string
-	userAndPass      map[string]Userpass
-	basicCredentials *basicCredentials
-	mux              sync.Mutex
-	bytesPool        sync.Pool
-	logger           Logger
+	baseClient           *http.Client
+	challengeManager     challenge.Manager
+	clientset            map[string]*lru.LRU[string, *http.Client]
+	clientSize           int
+	modify               func(info *PathInfo) *PathInfo
+	insecureDomain       map[string]struct{}
+	domainAlias          map[string]string
+	userAndPass          map[string]Userpass
+	basicCredentials     *basicCredentials
+	mux                  sync.Mutex
+	bytesPool            sync.Pool
+	logger               Logger
+	totalBlobsSpeedLimit *geario.Gear
+	blobsSpeedLimit      *geario.B
 }
 
 type Option func(c *CRProxy)
+
+func WithBlobsSpeedLimit(limit geario.B) Option {
+	return func(c *CRProxy) {
+		c.blobsSpeedLimit = &limit
+	}
+}
+
+func WithTotalBlobsSpeedLimit(limit geario.B) Option {
+	return func(c *CRProxy) {
+		c.totalBlobsSpeedLimit = geario.NewGear(speedLimitDuration, limit)
+	}
+}
 
 func WithBaseClient(baseClient *http.Client) Option {
 	return func(c *CRProxy) {
@@ -298,7 +315,17 @@ func (c *CRProxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodHead {
 		buf := c.bytesPool.Get().([]byte)
 		defer c.bytesPool.Put(buf)
-		io.CopyBuffer(rw, resp.Body, buf)
+		var body io.Reader = resp.Body
+
+		if c.totalBlobsSpeedLimit != nil && info.Blobs != "" {
+			body = c.totalBlobsSpeedLimit.Reader(body)
+		}
+
+		if c.blobsSpeedLimit != nil && info.Blobs != "" {
+			body = geario.NewGear(speedLimitDuration, *c.blobsSpeedLimit).Reader(body)
+		}
+
+		io.CopyBuffer(rw, body, buf)
 	}
 }
 

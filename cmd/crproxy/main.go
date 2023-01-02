@@ -11,15 +11,23 @@ import (
 
 	"github.com/gorilla/handlers"
 	"github.com/spf13/pflag"
+	"github.com/wzshiming/geario"
+
 	"github.com/wzshiming/crproxy"
 )
 
-var address string
-var userpass []string
+var (
+	address              string
+	userpass             []string
+	blobsSpeedLimit      string
+	totalBlobsSpeedLimit string
+)
 
 func init() {
 	pflag.StringSliceVarP(&userpass, "user", "u", nil, "host and username and password -u user:pwd@host")
 	pflag.StringVarP(&address, "address", "a", ":8080", "listen on the address")
+	pflag.StringVar(&blobsSpeedLimit, "blobs-speed-limit", "", "blobs speed limit per second (default unlimited)")
+	pflag.StringVar(&totalBlobsSpeedLimit, "total-blobs-speed-limit", "", "total blobs speed limit per second (default unlimited)")
 	pflag.Parse()
 }
 
@@ -66,19 +74,9 @@ func main() {
 		},
 	}
 
-	var userAndPass map[string]crproxy.Userpass
-	if len(userpass) != 0 {
-		bc, err := toUserAndPass(userpass)
-		if err != nil {
-			logger.Println("failed to toBasicCredentials:", err)
-			return
-		}
-		userAndPass = bc
-	}
-	crp, err := crproxy.NewCRProxy(
+	opts := []crproxy.Option{
 		crproxy.WithBaseClient(cli),
 		crproxy.WithLogger(logger),
-		crproxy.WithUserAndPass(userAndPass),
 		crproxy.WithMaxClientSizeForEachRegistry(16),
 		crproxy.WithDomainAlias(map[string]string{
 			"docker.io": "registry-1.docker.io",
@@ -90,7 +88,36 @@ func main() {
 			}
 			return info
 		}),
-	)
+	}
+
+	if len(userpass) != 0 {
+		bc, err := toUserAndPass(userpass)
+		if err != nil {
+			logger.Println("failed to toUserAndPass", err)
+			os.Exit(1)
+		}
+		opts = append(opts, crproxy.WithUserAndPass(bc))
+	}
+
+	if blobsSpeedLimit != "" {
+		b, err := geario.FromHumanSize(blobsSpeedLimit)
+		if err != nil {
+			logger.Println("failed to FromHumanSize:", err)
+			os.Exit(1)
+		}
+		opts = append(opts, crproxy.WithBlobsSpeedLimit(b))
+	}
+
+	if totalBlobsSpeedLimit != "" {
+		b, err := geario.FromHumanSize(totalBlobsSpeedLimit)
+		if err != nil {
+			logger.Println("failed to FromHumanSize:", err)
+			os.Exit(1)
+		}
+		opts = append(opts, crproxy.WithTotalBlobsSpeedLimit(b))
+	}
+
+	crp, err := crproxy.NewCRProxy(opts...)
 	if err != nil {
 		logger.Println("failed to NewCRProxy:", err)
 		os.Exit(1)
