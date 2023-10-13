@@ -19,6 +19,7 @@ import (
 
 var (
 	prefix             = "/v2/"
+	catalog            = prefix + "_catalog"
 	speedLimitDuration = time.Second
 )
 
@@ -257,6 +258,10 @@ func (c *CRProxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	}
 	if !strings.HasPrefix(oriPath, prefix) {
 		http.NotFound(rw, r)
+		return
+	}
+	if oriPath == catalog {
+		errcode.ServeJSON(rw, errcode.ErrorCodeUnsupported)
 		return
 	}
 
