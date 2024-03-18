@@ -37,7 +37,7 @@ type CRProxy struct {
 	domainAlias          map[string]string
 	userAndPass          map[string]Userpass
 	basicCredentials     *basicCredentials
-	mux                  sync.Mutex
+	mut                  sync.Mutex
 	bytesPool            sync.Pool
 	logger               Logger
 	totalBlobsSpeedLimit *geario.Gear
@@ -134,8 +134,8 @@ func (c *CRProxy) getScheme(host string) string {
 }
 
 func (c *CRProxy) getClientset(host string, image string) *http.Client {
-	c.mux.Lock()
-	defer c.mux.Unlock()
+	c.mut.Lock()
+	defer c.mut.Unlock()
 	if c.clientset[host] != nil {
 		client, ok := c.clientset[host].Get(image)
 		if ok {
@@ -170,8 +170,8 @@ func (c *CRProxy) getClientset(host string, image string) *http.Client {
 }
 
 func (c *CRProxy) ping(host string) error {
-	c.mux.Lock()
-	defer c.mux.Unlock()
+	c.mut.Lock()
+	defer c.mut.Unlock()
 
 	if c.logger != nil {
 		c.logger.Println("ping", host)
