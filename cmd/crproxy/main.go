@@ -19,6 +19,7 @@ import (
 var (
 	address              string
 	userpass             []string
+	disableKeepAlives    []string
 	blobsSpeedLimit      string
 	totalBlobsSpeedLimit string
 )
@@ -26,6 +27,7 @@ var (
 func init() {
 	pflag.StringSliceVarP(&userpass, "user", "u", nil, "host and username and password -u user:pwd@host")
 	pflag.StringVarP(&address, "address", "a", ":8080", "listen on the address")
+	pflag.StringSliceVar(&disableKeepAlives, "disable-keep-alives", nil, "disable keep alives for the host")
 	pflag.StringVar(&blobsSpeedLimit, "blobs-speed-limit", "", "blobs speed limit per second (default unlimited)")
 	pflag.StringVar(&totalBlobsSpeedLimit, "total-blobs-speed-limit", "", "total blobs speed limit per second (default unlimited)")
 	pflag.Parse()
@@ -88,6 +90,7 @@ func main() {
 			}
 			return info
 		}),
+		crproxy.WithDisableKeepAlives(disableKeepAlives),
 	}
 
 	if len(userpass) != 0 {

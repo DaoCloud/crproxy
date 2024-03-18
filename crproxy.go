@@ -28,20 +28,21 @@ type Logger interface {
 }
 
 type CRProxy struct {
-	baseClient           *http.Client
-	challengeManager     challenge.Manager
-	clientset            map[string]*lru.LRU[string, *http.Client]
-	clientSize           int
-	modify               func(info *PathInfo) *PathInfo
-	insecureDomain       map[string]struct{}
-	domainAlias          map[string]string
-	userAndPass          map[string]Userpass
-	basicCredentials     *basicCredentials
-	mut                  sync.Mutex
-	bytesPool            sync.Pool
-	logger               Logger
-	totalBlobsSpeedLimit *geario.Gear
-	blobsSpeedLimit      *geario.B
+	baseClient              *http.Client
+	challengeManager        challenge.Manager
+	clientset               map[string]*lru.LRU[string, *http.Client]
+	clientSize              int
+	modify                  func(info *PathInfo) *PathInfo
+	insecureDomain          map[string]struct{}
+	domainDisableKeepAlives map[string]struct{}
+	domainAlias             map[string]string
+	userAndPass             map[string]Userpass
+	basicCredentials        *basicCredentials
+	mut                     sync.Mutex
+	bytesPool               sync.Pool
+	logger                  Logger
+	totalBlobsSpeedLimit    *geario.Gear
+	blobsSpeedLimit         *geario.B
 }
 
 type Option func(c *CRProxy)
@@ -91,6 +92,15 @@ func WithPathInfoModifyFunc(modify func(info *PathInfo) *PathInfo) Option {
 func WithMaxClientSizeForEachRegistry(clientSize int) Option {
 	return func(c *CRProxy) {
 		c.clientSize = clientSize
+	}
+}
+
+func WithDisableKeepAlives(disableKeepAlives []string) Option {
+	return func(c *CRProxy) {
+		c.domainDisableKeepAlives = map[string]struct{}{}
+		for _, v := range disableKeepAlives {
+			c.domainDisableKeepAlives[v] = struct{}{}
+		}
 	}
 }
 
@@ -151,8 +161,19 @@ func (c *CRProxy) getClientset(host string, image string) *http.Client {
 		credentialStore = c.basicCredentials
 	}
 	authHandler := auth.NewTokenHandler(nil, credentialStore, image, "pull")
+
+	tr := c.baseClient.Transport
+
+	if c.domainDisableKeepAlives != nil {
+		if _, ok := c.domainDisableKeepAlives[host]; ok {
+			tr = c.disableKeepAlives(tr)
+		}
+	}
+
+	tr = transport.NewTransport(tr, auth.NewAuthorizer(c.challengeManager, authHandler))
+
 	client := &http.Client{
-		Transport:     transport.NewTransport(c.baseClient.Transport, auth.NewAuthorizer(c.challengeManager, authHandler)),
+		Transport:     tr,
 		CheckRedirect: c.baseClient.CheckRedirect,
 		Timeout:       c.baseClient.Timeout,
 		Jar:           c.baseClient.Jar,
@@ -167,6 +188,25 @@ func (c *CRProxy) getClientset(host string, image string) *http.Client {
 	}
 	c.clientset[host].Put(image, client)
 	return client
+}
+
+func (c *CRProxy) disableKeepAlives(rt http.RoundTripper) http.RoundTripper {
+	if rt == nil {
+		tr := http.DefaultTransport.(*http.Transport).Clone()
+		tr.DisableKeepAlives = true
+		return tr
+	}
+	if tr, ok := rt.(*http.Transport); ok {
+		if !tr.DisableKeepAlives {
+			tr = tr.Clone()
+			tr.DisableKeepAlives = true
+		}
+		return tr
+	}
+	if c.logger != nil {
+		c.logger.Println("failed to disable keep alives")
+	}
+	return rt
 }
 
 func (c *CRProxy) ping(host string) error {
