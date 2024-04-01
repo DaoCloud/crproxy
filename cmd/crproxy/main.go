@@ -82,10 +82,14 @@ func main() {
 		crproxy.WithMaxClientSizeForEachRegistry(16),
 		crproxy.WithDomainAlias(map[string]string{
 			"docker.io": "registry-1.docker.io",
+			"ollama.ai": "registry.ollama.ai",
 		}),
 		crproxy.WithPathInfoModifyFunc(func(info *crproxy.PathInfo) *crproxy.PathInfo {
 			// docker.io/busybox => docker.io/library/busybox
 			if info.Host == "registry-1.docker.io" && !strings.Contains(info.Image, "/") {
+				info.Image = "library/" + info.Image
+			}
+			if info.Host == "registry.ollama.ai" && !strings.Contains(info.Image, "/") {
 				info.Image = "library/" + info.Image
 			}
 			return info
