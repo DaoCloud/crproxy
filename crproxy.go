@@ -43,6 +43,7 @@ type CRProxy struct {
 	logger                  Logger
 	totalBlobsSpeedLimit    *geario.Gear
 	blobsSpeedLimit         *geario.B
+	blockFunc               func(*PathInfo) bool
 }
 
 type Option func(c *CRProxy)
@@ -101,6 +102,12 @@ func WithDisableKeepAlives(disableKeepAlives []string) Option {
 		for _, v := range disableKeepAlives {
 			c.domainDisableKeepAlives[v] = struct{}{}
 		}
+	}
+}
+
+func WithBlockFunc(blockFunc func(info *PathInfo) bool) Option {
+	return func(c *CRProxy) {
+		c.blockFunc = blockFunc
 	}
 }
 
@@ -314,6 +321,11 @@ func (c *CRProxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 
 	if c.modify != nil {
 		info = c.modify(info)
+	}
+
+	if c.blockFunc != nil && c.blockFunc(info) {
+		errcode.ServeJSON(rw, errcode.ErrorCodeDenied)
+		return
 	}
 
 	path, err := info.Path()
