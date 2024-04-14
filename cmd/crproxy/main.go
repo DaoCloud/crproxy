@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/gorilla/handlers"
@@ -22,6 +23,7 @@ var (
 	disableKeepAlives    []string
 	blobsSpeedLimit      string
 	totalBlobsSpeedLimit string
+	blockImageList       []string
 )
 
 func init() {
@@ -30,6 +32,7 @@ func init() {
 	pflag.StringSliceVar(&disableKeepAlives, "disable-keep-alives", nil, "disable keep alives for the host")
 	pflag.StringVar(&blobsSpeedLimit, "blobs-speed-limit", "", "blobs speed limit per second (default unlimited)")
 	pflag.StringVar(&totalBlobsSpeedLimit, "total-blobs-speed-limit", "", "total blobs speed limit per second (default unlimited)")
+	pflag.StringSliceVar(&blockImageList, "block-image-list", nil, "block image list")
 	pflag.Parse()
 }
 
@@ -80,6 +83,10 @@ func main() {
 		crproxy.WithBaseClient(cli),
 		crproxy.WithLogger(logger),
 		crproxy.WithMaxClientSizeForEachRegistry(16),
+		crproxy.WithBlockFunc(func(info *crproxy.PathInfo) bool {
+			image := info.Host + "/" + info.Image
+			return slices.Contains(blockImageList, image)
+		}),
 		crproxy.WithDomainAlias(map[string]string{
 			"docker.io": "registry-1.docker.io",
 			"ollama.ai": "registry.ollama.ai",
