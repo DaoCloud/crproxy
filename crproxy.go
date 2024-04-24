@@ -115,7 +115,7 @@ func NewCRProxy(opts ...Option) (*CRProxy, error) {
 	c := &CRProxy{
 		challengeManager: challenge.NewSimpleManager(),
 		clientset:        map[string]*lru.LRU[string, *http.Client]{},
-		clientSize:       16,
+		clientSize:       256,
 		baseClient:       http.DefaultClient,
 		bytesPool: sync.Pool{
 			New: func() interface{} {
