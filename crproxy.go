@@ -440,7 +440,7 @@ func ParseOriginPathInfo(path string) (*PathInfo, bool) {
 	}
 	host := path[:i]
 	tail := path[i+1:]
-	if !isDomainName(host) {
+	if !isDomainName(host) || !strings.Contains(host, ".") {
 		return nil, false
 	}
 
