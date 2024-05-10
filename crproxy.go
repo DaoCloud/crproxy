@@ -14,6 +14,7 @@ import (
 	"github.com/distribution/distribution/v3/registry/client/auth/challenge"
 	"github.com/distribution/distribution/v3/registry/client/transport"
 	"github.com/wzshiming/geario"
+	"github.com/wzshiming/httpseek"
 	"github.com/wzshiming/lru"
 )
 
@@ -44,6 +45,8 @@ type CRProxy struct {
 	totalBlobsSpeedLimit    *geario.Gear
 	blobsSpeedLimit         *geario.B
 	blockFunc               func(*PathInfo) bool
+	retry                   int
+	retryInterval           time.Duration
 }
 
 type Option func(c *CRProxy)
@@ -111,6 +114,13 @@ func WithBlockFunc(blockFunc func(info *PathInfo) bool) Option {
 	}
 }
 
+func WithRetry(retry int, retryInterval time.Duration) Option {
+	return func(c *CRProxy) {
+		c.retry = retry
+		c.retryInterval = retryInterval
+	}
+}
+
 func NewCRProxy(opts ...Option) (*CRProxy, error) {
 	c := &CRProxy{
 		challengeManager: challenge.NewSimpleManager(),
@@ -175,6 +185,19 @@ func (c *CRProxy) getClientset(host string, image string) *http.Client {
 		if _, ok := c.domainDisableKeepAlives[host]; ok {
 			tr = c.disableKeepAlives(tr)
 		}
+	}
+
+	if c.retryInterval > 0 {
+		tr = httpseek.NewMustReaderTransport(tr, func(request *http.Request, retry int, err error) error {
+			if c.retry > 0 && retry >= c.retry {
+				return err
+			}
+			if c.logger != nil {
+				c.logger.Println("Retry", request.URL, retry, err)
+			}
+			time.Sleep(c.retryInterval)
+			return nil
+		})
 	}
 
 	tr = transport.NewTransport(tr, auth.NewAuthorizer(c.challengeManager, authHandler))
