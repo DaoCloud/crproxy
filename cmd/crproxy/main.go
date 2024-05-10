@@ -9,6 +9,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/gorilla/handlers"
 	"github.com/spf13/pflag"
@@ -24,6 +25,8 @@ var (
 	blobsSpeedLimit      string
 	totalBlobsSpeedLimit string
 	blockImageList       []string
+	retry                int
+	retryInterval        time.Duration
 )
 
 func init() {
@@ -33,6 +36,8 @@ func init() {
 	pflag.StringVar(&blobsSpeedLimit, "blobs-speed-limit", "", "blobs speed limit per second (default unlimited)")
 	pflag.StringVar(&totalBlobsSpeedLimit, "total-blobs-speed-limit", "", "total blobs speed limit per second (default unlimited)")
 	pflag.StringSliceVar(&blockImageList, "block-image-list", nil, "block image list")
+	pflag.IntVar(&retry, "retry", 0, "retry times")
+	pflag.DurationVar(&retryInterval, "retry-interval", 0, "retry interval")
 	pflag.Parse()
 }
 
@@ -132,6 +137,10 @@ func main() {
 			os.Exit(1)
 		}
 		opts = append(opts, crproxy.WithTotalBlobsSpeedLimit(b))
+	}
+
+	if retry > 0 {
+		opts = append(opts, crproxy.WithRetry(retry, retryInterval))
 	}
 
 	crp, err := crproxy.NewCRProxy(opts...)

@@ -1,12 +1,13 @@
 module github.com/wzshiming/crproxy
 
-go 1.19
+go 1.21
 
 require (
 	github.com/distribution/distribution/v3 v3.0.0-20220907155224-78b9c98c5c31
 	github.com/gorilla/handlers v1.5.1
 	github.com/spf13/pflag v1.0.3
 	github.com/wzshiming/geario v0.0.0-20220512063849-ddc203ba7487
+	github.com/wzshiming/httpseek v0.1.0
 	github.com/wzshiming/lru v0.1.0
 )
 
