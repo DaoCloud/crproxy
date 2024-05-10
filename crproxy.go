@@ -16,6 +16,8 @@ import (
 	"github.com/wzshiming/geario"
 	"github.com/wzshiming/httpseek"
 	"github.com/wzshiming/lru"
+	"errors"
+	"context"
 )
 
 var (
@@ -192,6 +194,10 @@ func (c *CRProxy) getClientset(host string, image string) *http.Client {
 			tr = http.DefaultTransport
 		}
 		tr = httpseek.NewMustReaderTransport(tr, func(request *http.Request, retry int, err error) error {
+			if errors.Is(err, context.Canceled) ||
+				errors.Is(err, context.DeadlineExceeded) {
+				return err
+			}
 			if c.retry > 0 && retry >= c.retry {
 				return err
 			}
