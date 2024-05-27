@@ -1,6 +1,8 @@
 package crproxy
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -16,8 +18,6 @@ import (
 	"github.com/wzshiming/geario"
 	"github.com/wzshiming/httpseek"
 	"github.com/wzshiming/lru"
-	"errors"
-	"context"
 )
 
 var (
