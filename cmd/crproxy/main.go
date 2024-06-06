@@ -10,10 +10,17 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"net/url"
 
+	"github.com/distribution/distribution/v3/registry/storage/driver/factory"
 	"github.com/gorilla/handlers"
 	"github.com/spf13/pflag"
 	"github.com/wzshiming/geario"
+
+	_ "github.com/distribution/distribution/v3/registry/storage/driver/azure"
+	_ "github.com/distribution/distribution/v3/registry/storage/driver/gcs"
+	_ "github.com/distribution/distribution/v3/registry/storage/driver/s3-aws"
+	_ "github.com/wzshiming/crproxy/storage/driver/oss"
 
 	"github.com/wzshiming/crproxy"
 )
@@ -27,6 +34,10 @@ var (
 	blockImageList       []string
 	retry                int
 	retryInterval        time.Duration
+	storageDriver        string
+	storageParameters    map[string]string
+	linkExpires          time.Duration
+	redirectLinks        string
 )
 
 func init() {
@@ -38,6 +49,10 @@ func init() {
 	pflag.StringSliceVar(&blockImageList, "block-image-list", nil, "block image list")
 	pflag.IntVar(&retry, "retry", 0, "retry times")
 	pflag.DurationVar(&retryInterval, "retry-interval", 0, "retry interval")
+	pflag.StringVar(&storageDriver, "storage-driver", "", "storage driver")
+	pflag.StringToStringVar(&storageParameters, "storage-parameters", nil, "storage parameters")
+	pflag.DurationVar(&linkExpires, "link-expires", 0, "link expires")
+	pflag.StringVar(&redirectLinks, "redirect-links", "", "redirect links")
 	pflag.Parse()
 }
 
@@ -103,6 +118,30 @@ func main() {
 			return info
 		}),
 		crproxy.WithDisableKeepAlives(disableKeepAlives),
+	}
+
+	if storageDriver != "" {
+		parameters := map[string]interface{}{}
+		for k, v := range storageParameters {
+			parameters[k] = v
+		}
+		sd, err := factory.Create(storageDriver, parameters)
+		if err != nil {
+			logger.Println("create storage driver failed:", err)
+			os.Exit(1)
+		}
+		opts = append(opts, crproxy.WithStorageDriver(sd))
+		if linkExpires > 0 {
+			opts = append(opts, crproxy.WithLinkExpires(linkExpires))
+		}
+		if redirectLinks != "" {
+			u, err := url.Parse(redirectLinks)
+			if err != nil {
+				logger.Println("parse redirect links failed:", err)
+				os.Exit(1)
+			}
+			opts = append(opts, crproxy.WithRedirectLinks(u))
+		}
 	}
 
 	if len(blockImageList) != 0 {
