@@ -26,6 +26,7 @@ import (
 )
 
 var (
+	behind               bool
 	address              string
 	userpass             []string
 	disableKeepAlives    []string
@@ -41,6 +42,7 @@ var (
 )
 
 func init() {
+	pflag.BoolVar(&behind, "behind", false, "Behind the reverse proxy")
 	pflag.StringSliceVarP(&userpass, "user", "u", nil, "host and username and password -u user:pwd@host")
 	pflag.StringVarP(&address, "address", "a", ":8080", "listen on the address")
 	pflag.StringSliceVar(&disableKeepAlives, "disable-keep-alives", nil, "disable keep alives for the host")
@@ -189,11 +191,17 @@ func main() {
 	}
 
 	mux.Handle("/v2/", crp)
+
+	var handler http.Handler = mux
+	handler = handlers.LoggingHandler(os.Stderr, handler)
+	if behind {
+		handler = handlers.ProxyHeaders(handler)
+	}
 	server := http.Server{
 		BaseContext: func(listener net.Listener) context.Context {
 			return ctx
 		},
-		Handler: handlers.LoggingHandler(os.Stderr, mux),
+		Handler: handler,
 		Addr:    address,
 	}
 
