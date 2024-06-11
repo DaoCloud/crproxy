@@ -12,7 +12,7 @@ docker run -d --name crproxy \
 ```
 `如crproxy所在宿主机全局代理，则无需添加-e HTTPS_PROXY环境变量`
 
-### nginx配置
+### nginx配置（可省略、6be7957c合并可删除该步骤）
 npm或nginx均可、反代crproxy
 ```
 location /v2/ {
@@ -36,6 +36,8 @@ tee /etc/docker/daemon.json <<-'EOF'
 EOF
 ```
 `nginx_ip:nginx_port按照实际情况填写，域名和ip均可。`
+
+`这里可直接使用crproxy的ip和端口，区别在于nginx反代可以不用在docker pull的时候指定docker.io镜像仓库。`
 
 ### 重启docker
 ```
