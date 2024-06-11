@@ -31,7 +31,9 @@ var (
 	userpass             []string
 	disableKeepAlives    []string
 	blobsSpeedLimit      string
+	ipsSpeedLimit        string
 	totalBlobsSpeedLimit string
+	allowIPList          []string
 	blockImageList       []string
 	retry                int
 	retryInterval        time.Duration
@@ -47,7 +49,9 @@ func init() {
 	pflag.StringVarP(&address, "address", "a", ":8080", "listen on the address")
 	pflag.StringSliceVar(&disableKeepAlives, "disable-keep-alives", nil, "disable keep alives for the host")
 	pflag.StringVar(&blobsSpeedLimit, "blobs-speed-limit", "", "blobs speed limit per second (default unlimited)")
+	pflag.StringVar(&ipsSpeedLimit, "ips-speed-limit", "", "ips speed limit per second (default unlimited)")
 	pflag.StringVar(&totalBlobsSpeedLimit, "total-blobs-speed-limit", "", "total blobs speed limit per second (default unlimited)")
+	pflag.StringSliceVar(&allowIPList, "allow-ip-list", nil, "allow ip list")
 	pflag.StringSliceVar(&blockImageList, "block-image-list", nil, "block image list")
 	pflag.IntVar(&retry, "retry", 0, "retry times")
 	pflag.DurationVar(&retryInterval, "retry-interval", 0, "retry interval")
@@ -162,13 +166,22 @@ func main() {
 		opts = append(opts, crproxy.WithUserAndPass(bc))
 	}
 
-	if blobsSpeedLimit != "" {
-		b, err := geario.FromHumanSize(blobsSpeedLimit)
+	if ipsSpeedLimit != "" {
+		b, d, err := getLimit(ipsSpeedLimit)
 		if err != nil {
 			logger.Println("failed to FromHumanSize:", err)
 			os.Exit(1)
 		}
-		opts = append(opts, crproxy.WithBlobsSpeedLimit(b))
+		opts = append(opts, crproxy.WithIPsSpeedLimit(b, d))
+	}
+
+	if blobsSpeedLimit != "" {
+		b, d, err := getLimit(blobsSpeedLimit)
+		if err != nil {
+			logger.Println("failed to FromHumanSize:", err)
+			os.Exit(1)
+		}
+		opts = append(opts, crproxy.WithBlobsSpeedLimit(b, d))
 	}
 
 	if totalBlobsSpeedLimit != "" {
@@ -210,4 +223,32 @@ func main() {
 		logger.Println("failed to ListenAndServe:", err)
 		os.Exit(1)
 	}
+}
+
+func getLimit(s string) (geario.B, time.Duration, error) {
+	i := strings.Index(s, "/")
+	if i == -1 {
+		b, err := geario.FromHumanSize(s)
+		if err != nil {
+			return 0, 0, err
+		}
+		return b, time.Second, nil
+	}
+
+	b, err := geario.FromHumanSize(s[:i])
+	if err != nil {
+		return 0, 0, err
+	}
+
+	dur := s[i+1:]
+	if dur[0] < '0' || dur[0] > '9' {
+		dur = "1" + dur
+	}
+
+	d, err := time.ParseDuration(dur)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	return b, d, nil
 }
