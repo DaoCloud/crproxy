@@ -848,6 +848,9 @@ func ParseOriginPathInfo(path string) (*PathInfo, bool) {
 		info.Manifests = tails[len(tails)-1]
 	case "blobs":
 		info.Blobs = tails[len(tails)-1]
+		if len(info.Blobs) != 7+64 {
+			return nil, false
+		}
 	}
 	return info, true
 }
