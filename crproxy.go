@@ -29,6 +29,7 @@ var (
 	prefix             = "/v2/"
 	catalog            = prefix + "_catalog"
 	speedLimitDuration = time.Second
+	defaultHost        = "docker.io"
 )
 
 type Logger interface {
@@ -651,6 +652,12 @@ func (p PathInfo) Path() (string, error) {
 
 func ParseOriginPathInfo(path string) (*PathInfo, bool) {
 	path = strings.TrimLeft(path, prefix)
+
+	// add default prefix if not exist
+	if !strings.HasPrefix(path, defaultHost) {
+		path = defaultHost + "/" + path
+	}
+
 	i := strings.IndexByte(path, '/')
 	if i <= 0 {
 		return nil, false
