@@ -35,6 +35,7 @@ var (
 	ipsSpeedLimit        string
 	totalBlobsSpeedLimit string
 	blockImageList       []string
+	privilegedIPList     []string
 	retry                int
 	retryInterval        time.Duration
 	storageDriver        string
@@ -53,6 +54,7 @@ func init() {
 	pflag.StringVar(&ipsSpeedLimit, "ips-speed-limit", "", "ips speed limit per second (default unlimited)")
 	pflag.StringVar(&totalBlobsSpeedLimit, "total-blobs-speed-limit", "", "total blobs speed limit per second (default unlimited)")
 	pflag.StringSliceVar(&blockImageList, "block-image-list", nil, "block image list")
+	pflag.StringSliceVar(&privilegedIPList, "privileged-ip-list", nil, "privileged IP list")
 	pflag.IntVar(&retry, "retry", 0, "retry times")
 	pflag.DurationVar(&retryInterval, "retry-interval", 0, "retry interval")
 	pflag.StringVar(&storageDriver, "storage-driver", "", "storage driver")
@@ -155,6 +157,10 @@ func main() {
 			image := info.Host + "/" + info.Image
 			return slices.Contains(blockImageList, image)
 		}))
+	}
+
+	if len(privilegedIPList) != 0 {
+		opts = append(opts, crproxy.WithPrivilegedIPs(privilegedIPList))
 	}
 
 	if len(userpass) != 0 {

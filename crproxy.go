@@ -64,9 +64,21 @@ type CRProxy struct {
 	mutCache                sync.Map
 	redirectLinks           *url.URL
 	limitDelay              bool
+	privilegedIPSet         map[string]struct{}
 }
 
 type Option func(c *CRProxy)
+
+func WithPrivilegedIPs(ips []string) Option {
+	return func(c *CRProxy) {
+		if c.privilegedIPSet == nil {
+			c.privilegedIPSet = map[string]struct{}{}
+		}
+		for _, ip := range ips {
+			c.privilegedIPSet[ip] = struct{}{}
+		}
+	}
+}
 
 func WithLimitDelay(b bool) Option {
 	return func(c *CRProxy) {
@@ -467,12 +479,14 @@ func (c *CRProxy) directResponse(rw http.ResponseWriter, r *http.Request, info *
 		defer c.bytesPool.Put(buf)
 		var body io.Reader = resp.Body
 
-		if c.totalBlobsSpeedLimit != nil && info.Blobs != "" {
-			body = c.totalBlobsSpeedLimit.Reader(body)
-		}
+		if !c.isPrivileged(r.RemoteAddr) {
+			if c.totalBlobsSpeedLimit != nil && info.Blobs != "" {
+				body = c.totalBlobsSpeedLimit.Reader(body)
+			}
 
-		if c.blobsSpeedLimit != nil && info.Blobs != "" {
-			body = geario.NewGear(c.blobsSpeedLimitDuration, *c.blobsSpeedLimit).Reader(body)
+			if c.blobsSpeedLimit != nil && info.Blobs != "" {
+				body = geario.NewGear(c.blobsSpeedLimitDuration, *c.blobsSpeedLimit).Reader(body)
+			}
 		}
 
 		io.CopyBuffer(rw, body, buf)
@@ -645,7 +659,21 @@ func addr(str string) string {
 	return str[:i]
 }
 
+func (c *CRProxy) isPrivileged(a string) bool {
+	if c.privilegedIPSet == nil {
+		return false
+	}
+	address := addr(a)
+
+	_, ok := c.privilegedIPSet[address]
+	return ok
+}
+
 func (c *CRProxy) checkLimit(rw http.ResponseWriter, r *http.Request, info *PathInfo) bool {
+	if c.isPrivileged(r.RemoteAddr) {
+		return true
+	}
+
 	if c.blobsSpeedLimit != nil && info.Blobs != "" {
 		bps, _ := c.speedLimitRecord.LoadOrStore(info.Blobs, geario.NewBPSAver(c.blobsSpeedLimitDuration))
 		aver := bps.Aver()
@@ -696,6 +724,10 @@ func (c *CRProxy) checkLimit(rw http.ResponseWriter, r *http.Request, info *Path
 }
 
 func (c *CRProxy) accumulativeLimit(rw http.ResponseWriter, r *http.Request, info *PathInfo, size int64) {
+	if c.isPrivileged(r.RemoteAddr) {
+		return
+	}
+
 	if c.blobsSpeedLimit != nil && info.Blobs != "" {
 		bps, ok := c.speedLimitRecord.Load(info.Blobs)
 		if ok {
