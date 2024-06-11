@@ -174,7 +174,7 @@ func NewCRProxy(opts ...Option) (*CRProxy, error) {
 	c := &CRProxy{
 		challengeManager: challenge.NewSimpleManager(),
 		clientset:        map[string]*lru.LRU[string, *http.Client]{},
-		clientSize:       256,
+		clientSize:       1024,
 		baseClient:       http.DefaultClient,
 		bytesPool: sync.Pool{
 			New: func() interface{} {
@@ -509,6 +509,11 @@ func (c *CRProxy) cacheBlobResponse(rw http.ResponseWriter, r *http.Request, inf
 
 	stat, err := c.storageDriver.Stat(ctx, blobPath)
 	if err == nil {
+		if r.Method == http.MethodHead {
+			rw.Header().Set("Content-Length", strconv.FormatInt(stat.Size(), 10))
+			rw.Header().Set("Content-Type", "application/octet-stream")
+			return
+		}
 		c.accumulativeLimit(rw, r, info, stat.Size())
 		err = c.redirect(rw, r, blobPath)
 		if err == nil {
@@ -547,7 +552,11 @@ func (c *CRProxy) cacheBlobResponse(rw http.ResponseWriter, r *http.Request, inf
 			c.errorResponse(rw, r, signal.err)
 			return
 		}
-
+		if r.Method == http.MethodHead {
+			rw.Header().Set("Content-Length", strconv.FormatInt(signal.size, 10))
+			rw.Header().Set("Content-Type", "application/octet-stream")
+			return
+		}
 		c.accumulativeLimit(rw, r, info, signal.size)
 
 		err = c.redirect(rw, r, blobPath)
@@ -687,10 +696,6 @@ func (c *CRProxy) checkLimit(rw http.ResponseWriter, r *http.Request, info *Path
 }
 
 func (c *CRProxy) accumulativeLimit(rw http.ResponseWriter, r *http.Request, info *PathInfo, size int64) {
-	if r.Method != http.MethodGet {
-		return
-	}
-
 	if c.blobsSpeedLimit != nil && info.Blobs != "" {
 		bps, ok := c.speedLimitRecord.Load(info.Blobs)
 		if ok {
