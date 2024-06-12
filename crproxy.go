@@ -526,6 +526,7 @@ func (c *CRProxy) cacheBlobResponse(rw http.ResponseWriter, r *http.Request, inf
 		if r.Method == http.MethodHead {
 			rw.Header().Set("Content-Length", strconv.FormatInt(stat.Size(), 10))
 			rw.Header().Set("Content-Type", "application/octet-stream")
+			doneCache()
 			return
 		}
 		c.accumulativeLimit(rw, r, info, stat.Size())
