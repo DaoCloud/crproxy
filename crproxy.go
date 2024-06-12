@@ -475,7 +475,9 @@ func (c *CRProxy) directResponse(rw http.ResponseWriter, r *http.Request, info *
 	rw.WriteHeader(resp.StatusCode)
 
 	if r.Method != http.MethodHead {
-		c.accumulativeLimit(rw, r, info, resp.ContentLength)
+		if !c.accumulativeLimit(rw, r, info, resp.ContentLength) {
+			return
+		}
 
 		buf := c.bytesPool.Get().([]byte)
 		defer c.bytesPool.Put(buf)
@@ -525,20 +527,25 @@ func (c *CRProxy) cacheBlobResponse(rw http.ResponseWriter, r *http.Request, inf
 
 	stat, err := c.storageDriver.Stat(ctx, blobPath)
 	if err == nil {
+		doneCache()
+
+		size := stat.Size()
 		if r.Method == http.MethodHead {
-			rw.Header().Set("Content-Length", strconv.FormatInt(stat.Size(), 10))
+			rw.Header().Set("Content-Length", strconv.FormatInt(size, 10))
 			rw.Header().Set("Content-Type", "application/octet-stream")
-			doneCache()
 			return
 		}
-		c.accumulativeLimit(rw, r, info, stat.Size())
+
+		if !c.accumulativeLimit(rw, r, info, size) {
+			c.errorResponse(rw, r, nil)
+			return
+		}
+
 		err = c.redirect(rw, r, blobPath)
 		if err == nil {
-			doneCache()
 			return
 		}
 		c.errorResponse(rw, r, ctx.Err())
-		doneCache()
 		return
 	}
 	if c.logger != nil {
@@ -574,7 +581,10 @@ func (c *CRProxy) cacheBlobResponse(rw http.ResponseWriter, r *http.Request, inf
 			rw.Header().Set("Content-Type", "application/octet-stream")
 			return
 		}
-		c.accumulativeLimit(rw, r, info, signal.size)
+		if !c.accumulativeLimit(rw, r, info, signal.size) {
+			c.errorResponse(rw, r, nil)
+			return
+		}
 
 		err = c.redirect(rw, r, blobPath)
 		if err != nil {
@@ -677,29 +687,6 @@ func (c *CRProxy) checkLimit(rw http.ResponseWriter, r *http.Request, info *Path
 		return true
 	}
 
-	if c.blobsSpeedLimit != nil && info.Blobs != "" {
-		bps, _ := c.speedLimitRecord.LoadOrStore(info.Blobs, geario.NewBPSAver(c.blobsSpeedLimitDuration))
-		aver := bps.Aver()
-		if aver > *c.blobsSpeedLimit {
-			if c.logger != nil {
-				c.logger.Println("exceed limit", info.Blobs, aver, *c.blobsSpeedLimit)
-			}
-			if c.limitDelay {
-				select {
-				case <-r.Context().Done():
-					return false
-				case <-time.After(bps.Next().Sub(time.Now())):
-				}
-
-			} else {
-				err := ErrorCodeTooManyBandwidthsByBlob
-				rw.Header().Set("X-Retry-After", strconv.FormatInt(bps.Next().Unix(), 10))
-				errcode.ServeJSON(rw, err)
-				return false
-			}
-		}
-	}
-
 	if c.ipsSpeedLimit != nil && info.Blobs != "" {
 		address := addr(r.RemoteAddr)
 		bps, _ := c.speedLimitRecord.LoadOrStore(address, geario.NewBPSAver(c.ipsSpeedLimitDuration))
@@ -726,15 +713,20 @@ func (c *CRProxy) checkLimit(rw http.ResponseWriter, r *http.Request, info *Path
 	return true
 }
 
-func (c *CRProxy) accumulativeLimit(rw http.ResponseWriter, r *http.Request, info *PathInfo, size int64) {
+func (c *CRProxy) accumulativeLimit(rw http.ResponseWriter, r *http.Request, info *PathInfo, size int64) bool {
 	if c.isPrivileged(r.RemoteAddr) {
-		return
+		return true
 	}
 
 	if c.blobsSpeedLimit != nil && info.Blobs != "" {
-		bps, ok := c.speedLimitRecord.Load(info.Blobs)
-		if ok {
-			bps.Add(geario.B(size))
+		dur := GetSleepDuration(geario.B(size), *c.blobsSpeedLimit, c.blobsSpeedLimitDuration)
+		if c.logger != nil {
+			c.logger.Println("delay request", geario.B(size), dur)
+		}
+		select {
+		case <-r.Context().Done():
+			return false
+		case <-time.After(dur):
 		}
 	}
 
@@ -744,6 +736,8 @@ func (c *CRProxy) accumulativeLimit(rw http.ResponseWriter, r *http.Request, inf
 			bps.Add(geario.B(size))
 		}
 	}
+
+	return true
 }
 
 func (c *CRProxy) redirect(rw http.ResponseWriter, r *http.Request, blobPath string) error {
