@@ -525,20 +525,22 @@ func (c *CRProxy) cacheBlobResponse(rw http.ResponseWriter, r *http.Request, inf
 
 	stat, err := c.storageDriver.Stat(ctx, blobPath)
 	if err == nil {
+		doneCache()
+
+		size := stat.Size()
 		if r.Method == http.MethodHead {
-			rw.Header().Set("Content-Length", strconv.FormatInt(stat.Size(), 10))
+			rw.Header().Set("Content-Length", strconv.FormatInt(size, 10))
 			rw.Header().Set("Content-Type", "application/octet-stream")
-			doneCache()
 			return
 		}
-		c.accumulativeLimit(rw, r, info, stat.Size())
+
+		c.accumulativeLimit(rw, r, info, size)
+
 		err = c.redirect(rw, r, blobPath)
 		if err == nil {
-			doneCache()
 			return
 		}
 		c.errorResponse(rw, r, ctx.Err())
-		doneCache()
 		return
 	}
 	if c.logger != nil {
@@ -700,29 +702,6 @@ func (c *CRProxy) checkLimit(rw http.ResponseWriter, r *http.Request, info *Path
 		}
 	}
 
-	if c.ipsSpeedLimit != nil && info.Blobs != "" {
-		address := addr(r.RemoteAddr)
-		bps, _ := c.speedLimitRecord.LoadOrStore(address, geario.NewBPSAver(c.ipsSpeedLimitDuration))
-		aver := bps.Aver()
-		if aver > *c.ipsSpeedLimit {
-			if c.logger != nil {
-				c.logger.Println("exceed limit", address, aver, *c.ipsSpeedLimit)
-			}
-			if c.limitDelay {
-				select {
-				case <-r.Context().Done():
-					return false
-				case <-time.After(bps.Next().Sub(time.Now())):
-				}
-			} else {
-				err := ErrorCodeTooManyRequests
-				rw.Header().Set("X-Retry-After", strconv.FormatInt(bps.Next().Unix(), 10))
-				errcode.ServeJSON(rw, err)
-				return false
-			}
-		}
-	}
-
 	return true
 }
 
@@ -731,15 +710,17 @@ func (c *CRProxy) accumulativeLimit(rw http.ResponseWriter, r *http.Request, inf
 		return
 	}
 
-	if c.blobsSpeedLimit != nil && info.Blobs != "" {
-		bps, ok := c.speedLimitRecord.Load(info.Blobs)
-		if ok {
-			bps.Add(geario.B(size))
+	if c.ipsSpeedLimit != nil {
+		dur := GetSleepDuration(geario.B(size), *c.ipsSpeedLimit, c.ipsSpeedLimitDuration)
+		select {
+		case <-r.Context().Done():
+			return
+		case <-time.After(dur):
 		}
 	}
 
-	if c.ipsSpeedLimit != nil && info.Blobs != "" {
-		bps, ok := c.speedLimitRecord.Load(addr(r.RemoteAddr))
+	if c.blobsSpeedLimit != nil && info.Blobs != "" {
+		bps, ok := c.speedLimitRecord.Load(info.Blobs)
 		if ok {
 			bps.Add(geario.B(size))
 		}
