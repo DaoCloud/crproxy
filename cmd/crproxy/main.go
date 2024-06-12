@@ -175,7 +175,7 @@ func main() {
 	if ipsSpeedLimit != "" {
 		b, d, err := getLimit(ipsSpeedLimit)
 		if err != nil {
-			logger.Println("failed to FromHumanSize:", err)
+			logger.Println("failed to getLimit:", err)
 			os.Exit(1)
 		}
 		opts = append(opts, crproxy.WithIPsSpeedLimit(b, d))
@@ -184,16 +184,16 @@ func main() {
 	if blobsSpeedLimit != "" {
 		b, d, err := getLimit(blobsSpeedLimit)
 		if err != nil {
-			logger.Println("failed to FromHumanSize:", err)
+			logger.Println("failed to getLimit:", err)
 			os.Exit(1)
 		}
 		opts = append(opts, crproxy.WithBlobsSpeedLimit(b, d))
 	}
 
 	if totalBlobsSpeedLimit != "" {
-		b, err := geario.FromHumanSize(totalBlobsSpeedLimit)
+		b, err := geario.FromBytesSize(totalBlobsSpeedLimit)
 		if err != nil {
-			logger.Println("failed to FromHumanSize:", err)
+			logger.Println("failed to FromBytesSize:", err)
 			os.Exit(1)
 		}
 		opts = append(opts, crproxy.WithTotalBlobsSpeedLimit(b))
@@ -237,14 +237,14 @@ func main() {
 func getLimit(s string) (geario.B, time.Duration, error) {
 	i := strings.Index(s, "/")
 	if i == -1 {
-		b, err := geario.FromHumanSize(s)
+		b, err := geario.FromBytesSize(s)
 		if err != nil {
 			return 0, 0, err
 		}
 		return b, time.Second, nil
 	}
 
-	b, err := geario.FromHumanSize(s[:i])
+	b, err := geario.FromBytesSize(s[:i])
 	if err != nil {
 		return 0, 0, err
 	}
