@@ -458,6 +458,8 @@ func (c *CRProxy) directResponse(rw http.ResponseWriter, r *http.Request, info *
 		resp.Body.Close()
 	}()
 
+	resp.Header.Del("Docker-Ratelimit-Source")
+
 	if resp.StatusCode == http.StatusOK {
 		oldLink := resp.Header.Get("Link")
 		if oldLink != "" {
