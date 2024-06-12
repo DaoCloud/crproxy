@@ -1,6 +1,7 @@
 package crproxy
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -16,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/distribution/distribution/v3/manifest/manifestlist"
 	"github.com/distribution/distribution/v3/registry/api/errcode"
 	"github.com/distribution/distribution/v3/registry/client/auth"
 	"github.com/distribution/distribution/v3/registry/client/auth/challenge"
@@ -57,6 +59,7 @@ type CRProxy struct {
 	ipsSpeedLimit           *geario.B
 	ipsSpeedLimitDuration   time.Duration
 	blockFunc               func(*PathInfo) bool
+	blockImageSize          *geario.B
 	retry                   int
 	retryInterval           time.Duration
 	storageDriver           storagedriver.StorageDriver
@@ -83,6 +86,12 @@ func WithPrivilegedIPs(ips []string) Option {
 func WithLimitDelay(b bool) Option {
 	return func(c *CRProxy) {
 		c.limitDelay = b
+	}
+}
+
+func WithBlockImageSize(limit geario.B) Option {
+	return func(c *CRProxy) {
+		c.blockImageSize = &limit
 	}
 }
 
@@ -465,6 +474,29 @@ func (c *CRProxy) directResponse(rw http.ResponseWriter, r *http.Request, info *
 		}
 	}
 
+	if r.Method != http.MethodHead && !c.isPrivileged(r.RemoteAddr) {
+		if c.blockImageSize != nil && info.Manifests != "" {
+			ct := resp.Header.Get("Content-Type")
+			content, err := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			resp.Body = io.NopCloser(bytes.NewBuffer(content))
+			if err == nil {
+				manifest, _, err := UnmarshalManifest(ct, content)
+				if err == nil {
+					if _, ok := manifest.(manifestlist.DeserializedManifestList); !ok {
+						var sum int64
+						for _, refer := range manifest.References() {
+							sum += refer.Size
+						}
+						if int64(*c.blockImageSize) < sum {
+							errcode.ServeJSON(rw, errcode.ErrorCodeDenied)
+							return
+						}
+					}
+				}
+			}
+		}
+	}
 	header := rw.Header()
 	for k, v := range resp.Header {
 		key := textproto.CanonicalMIMEHeaderKey(k)
@@ -523,13 +555,14 @@ func (c *CRProxy) cacheBlobResponse(rw http.ResponseWriter, r *http.Request, inf
 
 	stat, err := c.storageDriver.Stat(ctx, blobPath)
 	if err == nil {
+		size := stat.Size()
 		if r.Method == http.MethodHead {
-			rw.Header().Set("Content-Length", strconv.FormatInt(stat.Size(), 10))
+			rw.Header().Set("Content-Length", strconv.FormatInt(size, 10))
 			rw.Header().Set("Content-Type", "application/octet-stream")
 			doneCache()
 			return
 		}
-		c.accumulativeLimit(rw, r, info, stat.Size())
+		c.accumulativeLimit(rw, r, info, size)
 		err = c.redirect(rw, r, blobPath)
 		if err == nil {
 			doneCache()

@@ -31,6 +31,7 @@ var (
 	userpass             []string
 	disableKeepAlives    []string
 	limitDelay           bool
+	blockImageSize       string
 	blobsSpeedLimit      string
 	ipsSpeedLimit        string
 	totalBlobsSpeedLimit string
@@ -50,6 +51,7 @@ func init() {
 	pflag.StringVarP(&address, "address", "a", ":8080", "listen on the address")
 	pflag.StringSliceVar(&disableKeepAlives, "disable-keep-alives", nil, "disable keep alives for the host")
 	pflag.BoolVar(&limitDelay, "limit-delay", false, "limit with delay")
+	pflag.StringVar(&blockImageSize, "block-image-size", "", "block image size")
 	pflag.StringVar(&blobsSpeedLimit, "blobs-speed-limit", "", "blobs speed limit per second (default unlimited)")
 	pflag.StringVar(&ipsSpeedLimit, "ips-speed-limit", "", "ips speed limit per second (default unlimited)")
 	pflag.StringVar(&totalBlobsSpeedLimit, "total-blobs-speed-limit", "", "total blobs speed limit per second (default unlimited)")
@@ -188,6 +190,15 @@ func main() {
 			os.Exit(1)
 		}
 		opts = append(opts, crproxy.WithBlobsSpeedLimit(b, d))
+	}
+
+	if blockImageSize != "" {
+		b, err := geario.FromBytesSize(blockImageSize)
+		if err != nil {
+			logger.Println("failed to FromBytesSize:", err)
+			os.Exit(1)
+		}
+		opts = append(opts, crproxy.WithBlockImageSize(b))
 	}
 
 	if totalBlobsSpeedLimit != "" {
