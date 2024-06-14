@@ -42,6 +42,7 @@ var (
 	storageParameters    map[string]string
 	linkExpires          time.Duration
 	redirectLinks        string
+	disableTagsList      bool
 )
 
 func init() {
@@ -61,6 +62,7 @@ func init() {
 	pflag.StringToStringVar(&storageParameters, "storage-parameters", nil, "storage parameters")
 	pflag.DurationVar(&linkExpires, "link-expires", 0, "link expires")
 	pflag.StringVar(&redirectLinks, "redirect-links", "", "redirect links")
+	pflag.BoolVar(&disableTagsList, "disable-tags-list", false, "disable tags list")
 	pflag.Parse()
 }
 
@@ -197,6 +199,10 @@ func main() {
 			os.Exit(1)
 		}
 		opts = append(opts, crproxy.WithTotalBlobsSpeedLimit(b))
+	}
+
+	if disableTagsList {
+		opts = append(opts, crproxy.WithDisableTagsList(true))
 	}
 
 	if retry > 0 {

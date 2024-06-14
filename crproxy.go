@@ -65,9 +65,16 @@ type CRProxy struct {
 	redirectLinks           *url.URL
 	limitDelay              bool
 	privilegedIPSet         map[string]struct{}
+	disableTagsList         bool
 }
 
 type Option func(c *CRProxy)
+
+func WithDisableTagsList(b bool) Option {
+	return func(c *CRProxy) {
+		c.disableTagsList = b
+	}
+}
 
 func WithPrivilegedIPs(ips []string) Option {
 	return func(c *CRProxy) {
@@ -335,6 +342,14 @@ func apiBase(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, emptyJSON)
 }
 
+func emptyTagsList(w http.ResponseWriter, r *http.Request) {
+	const emptyTagsList = `{"name":"disable-list-tags","tags":[]}`
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Length", fmt.Sprint(len(emptyTagsList)))
+	fmt.Fprint(w, emptyTagsList)
+}
+
 func (c *CRProxy) do(cli *http.Client, r *http.Request) (*http.Response, error) {
 	resp, err := cli.Do(r)
 	if err == nil {
@@ -416,6 +431,11 @@ func (c *CRProxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 
 	if c.blockFunc != nil && c.blockFunc(info) {
 		errcode.ServeJSON(rw, errcode.ErrorCodeDenied)
+		return
+	}
+
+	if info.TagsList && c.disableTagsList {
+		emptyTagsList(rw, r)
 		return
 	}
 
