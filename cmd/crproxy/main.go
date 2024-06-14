@@ -6,6 +6,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/http/pprof"
 	"net/url"
 	"os"
 	"slices"
@@ -43,6 +44,7 @@ var (
 	linkExpires          time.Duration
 	redirectLinks        string
 	disableTagsList      bool
+	enablePprof          bool
 )
 
 func init() {
@@ -63,6 +65,7 @@ func init() {
 	pflag.DurationVar(&linkExpires, "link-expires", 0, "link expires")
 	pflag.StringVar(&redirectLinks, "redirect-links", "", "redirect links")
 	pflag.BoolVar(&disableTagsList, "disable-tags-list", false, "disable tags list")
+	pflag.BoolVar(&enablePprof, "enable-pprof", false, "Enable pprof")
 	pflag.Parse()
 }
 
@@ -219,6 +222,14 @@ func main() {
 	}
 
 	mux.Handle("/v2/", crp)
+
+	if enablePprof {
+		mux.HandleFunc("/debug/pprof/", pprof.Index)
+		mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+		mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+		mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+		mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+	}
 
 	var handler http.Handler = mux
 	handler = handlers.LoggingHandler(os.Stderr, handler)
