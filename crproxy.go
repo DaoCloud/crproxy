@@ -39,7 +39,7 @@ type Logger interface {
 type CRProxy struct {
 	baseClient              *http.Client
 	challengeManager        challenge.Manager
-	clientset               map[string]*lru.LRU[string, *http.Client]
+	clientset               maps.SyncMap[string, *lru.LRU[string, *http.Client]]
 	clientSize              int
 	modify                  func(info *PathInfo) *PathInfo
 	insecureDomain          map[string]struct{}
@@ -192,8 +192,7 @@ func WithRetry(retry int, retryInterval time.Duration) Option {
 func NewCRProxy(opts ...Option) (*CRProxy, error) {
 	c := &CRProxy{
 		challengeManager: challenge.NewSimpleManager(),
-		clientset:        map[string]*lru.LRU[string, *http.Client]{},
-		clientSize:       1024,
+		clientSize:       10240,
 		baseClient:       http.DefaultClient,
 		bytesPool: sync.Pool{
 			New: func() interface{} {
@@ -229,13 +228,24 @@ func (c *CRProxy) getScheme(host string) string {
 }
 
 func (c *CRProxy) getClientset(host string, image string) *http.Client {
-	c.mutClientset.Lock()
-	defer c.mutClientset.Unlock()
-	if c.clientset[host] != nil {
-		client, ok := c.clientset[host].Get(image)
+	sets, hasSets := c.clientset.Load(host)
+	if hasSets {
+		client, ok := sets.Get(image)
 		if ok {
 			return client
 		}
+	}
+
+	c.mutClientset.Lock()
+	defer c.mutClientset.Unlock()
+	if sets == nil {
+		sets = lru.NewLRU(c.clientSize, func(image string, client *http.Client) {
+			if c.logger != nil {
+				c.logger.Println("evicted client", host, image)
+			}
+			client.CloseIdleConnections()
+		})
+		c.clientset.Store(host, sets)
 	}
 
 	if c.logger != nil {
@@ -283,15 +293,8 @@ func (c *CRProxy) getClientset(host string, image string) *http.Client {
 		Timeout:       c.baseClient.Timeout,
 		Jar:           c.baseClient.Jar,
 	}
-	if c.clientset[host] == nil {
-		c.clientset[host] = lru.NewLRU(c.clientSize, func(image string, client *http.Client) {
-			if c.logger != nil {
-				c.logger.Println("evicted client", host, image)
-			}
-			client.CloseIdleConnections()
-		})
-	}
-	c.clientset[host].Put(image, client)
+
+	sets.Put(image, client)
 	return client
 }
 
