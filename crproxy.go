@@ -696,10 +696,12 @@ func (c *CRProxy) checkLimit(rw http.ResponseWriter, r *http.Request, info *Path
 				c.logger.Println("exceed limit", address, aver, *c.ipsSpeedLimit)
 			}
 			if c.limitDelay {
-				select {
-				case <-r.Context().Done():
-					return false
-				case <-time.After(bps.Next().Sub(time.Now())):
+				for bps.Aver() > *c.ipsSpeedLimit {
+					select {
+					case <-r.Context().Done():
+						return false
+					case <-time.After(bps.Next().Sub(time.Now())):
+					}
 				}
 			} else {
 				err := ErrorCodeTooManyRequests
