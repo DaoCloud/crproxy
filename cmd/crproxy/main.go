@@ -9,7 +9,6 @@ import (
 	"net/http/pprof"
 	"net/url"
 	"os"
-	"slices"
 	"strings"
 	"time"
 
@@ -35,6 +34,7 @@ var (
 	blobsSpeedLimit      string
 	ipsSpeedLimit        string
 	totalBlobsSpeedLimit string
+	allowHostList        []string
 	blockImageList       []string
 	privilegedIPList     []string
 	retry                int
@@ -56,6 +56,7 @@ func init() {
 	pflag.StringVar(&blobsSpeedLimit, "blobs-speed-limit", "", "blobs speed limit per second (default unlimited)")
 	pflag.StringVar(&ipsSpeedLimit, "ips-speed-limit", "", "ips speed limit per second (default unlimited)")
 	pflag.StringVar(&totalBlobsSpeedLimit, "total-blobs-speed-limit", "", "total blobs speed limit per second (default unlimited)")
+	pflag.StringSliceVar(&allowHostList, "allow-host-list", nil, "allow host list")
 	pflag.StringSliceVar(&blockImageList, "block-image-list", nil, "block image list")
 	pflag.StringSliceVar(&privilegedIPList, "privileged-ip-list", nil, "privileged IP list")
 	pflag.IntVar(&retry, "retry", 0, "retry times")
@@ -157,10 +158,32 @@ func main() {
 		}
 	}
 
-	if len(blockImageList) != 0 {
+	if len(blockImageList) != 0 || len(allowHostList) != 0 {
+		allowHostMap := map[string]struct{}{}
+		for _, host := range allowHostList {
+			allowHostMap[host] = struct{}{}
+		}
+		blockImageMap := map[string]struct{}{}
+		for _, image := range blockImageList {
+			blockImageMap[image] = struct{}{}
+		}
 		opts = append(opts, crproxy.WithBlockFunc(func(info *crproxy.PathInfo) bool {
-			image := info.Host + "/" + info.Image
-			return slices.Contains(blockImageList, image)
+			if len(allowHostMap) != 0 {
+				_, ok := allowHostMap[info.Host]
+				if !ok {
+					return true
+				}
+			}
+
+			if len(blockImageMap) != 0 {
+				image := info.Host + "/" + info.Image
+				_, ok := blockImageMap[image]
+				if ok {
+					return true
+				}
+			}
+
+			return false
 		}))
 	}
 
