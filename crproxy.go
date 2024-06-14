@@ -318,9 +318,6 @@ func (c *CRProxy) disableKeepAlives(rt http.RoundTripper) http.RoundTripper {
 }
 
 func (c *CRProxy) ping(host string) error {
-	c.mutClientset.Lock()
-	defer c.mutClientset.Unlock()
-
 	if c.logger != nil {
 		c.logger.Println("ping", host)
 	}
