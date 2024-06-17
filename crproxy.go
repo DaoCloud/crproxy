@@ -66,9 +66,17 @@ type CRProxy struct {
 	limitDelay              bool
 	privilegedIPSet         map[string]struct{}
 	disableTagsList         bool
+
+	defaultRegistry string
 }
 
 type Option func(c *CRProxy)
+
+func WithDefaultRegistry(target string) Option {
+	return func(c *CRProxy) {
+		c.defaultRegistry = target
+	}
+}
 
 func WithDisableTagsList(b bool) Option {
 	return func(c *CRProxy) {
@@ -418,7 +426,7 @@ func (c *CRProxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	info, ok := ParseOriginPathInfo(oriPath)
+	info, ok := ParseOriginPathInfo(oriPath, c.defaultRegistry)
 	if !ok {
 		errcode.ServeJSON(rw, errcode.ErrorCodeDenied)
 		return
@@ -835,7 +843,7 @@ func (p PathInfo) Path() (string, error) {
 	return "", fmt.Errorf("unknow kind %#v", p)
 }
 
-func ParseOriginPathInfo(path string) (*PathInfo, bool) {
+func ParseOriginPathInfo(path string, defaultRegistry string) (*PathInfo, bool) {
 	path = strings.TrimLeft(path, prefix)
 	i := strings.IndexByte(path, '/')
 	if i <= 0 {
@@ -843,17 +851,40 @@ func ParseOriginPathInfo(path string) (*PathInfo, bool) {
 	}
 	host := path[:i]
 	tail := path[i+1:]
-	if !isDomainName(host) || !strings.Contains(host, ".") {
-		return nil, false
-	}
 
-	tails := strings.Split(tail, "/")
-	if len(tails) < 3 {
-		return nil, false
-	}
-	image := strings.Join(tails[:len(tails)-2], "/")
-	if image == "" {
-		return nil, false
+	var tails = []string{}
+	var image = ""
+
+	if !isDomainName(host) || !strings.Contains(host, ".") {
+		//  disable while non default registry seted.
+		if defaultRegistry == "" {
+			return nil, false
+		}
+		// if host is not a domain name, it is a image.
+		tails = strings.Split(tail, "/")
+		if len(tails) < 2 {
+			// should be more then 2 parts. like <image>/manifests/latest
+			return nil, false
+		}
+		image = strings.Join(tails[:len(tails)-2], "/")
+		if image == "" {
+			// the url looks like /v2/[busybox]/manifests/latest.
+			image = host
+		} else {
+			// the url looks like /v2/[pytorch/pytorch/...]/[manifests/latest].
+			image = host + "/" + image
+		}
+		host = defaultRegistry
+	} else {
+
+		tails = strings.Split(tail, "/")
+		if len(tails) < 3 {
+			return nil, false
+		}
+		image = strings.Join(tails[:len(tails)-2], "/")
+		if image == "" {
+			return nil, false
+		}
 	}
 
 	info := &PathInfo{

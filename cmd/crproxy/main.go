@@ -45,6 +45,7 @@ var (
 	redirectLinks        string
 	disableTagsList      bool
 	enablePprof          bool
+	defaultRegistry      string
 )
 
 func init() {
@@ -67,6 +68,7 @@ func init() {
 	pflag.StringVar(&redirectLinks, "redirect-links", "", "redirect links")
 	pflag.BoolVar(&disableTagsList, "disable-tags-list", false, "disable tags list")
 	pflag.BoolVar(&enablePprof, "enable-pprof", false, "Enable pprof")
+	pflag.StringVar(&defaultRegistry, "default-registry", "", "default registry used for non full-path docker pull, like:docker.io")
 	pflag.Parse()
 }
 
@@ -236,6 +238,10 @@ func main() {
 	}
 	if limitDelay {
 		opts = append(opts, crproxy.WithLimitDelay(true))
+	}
+
+	if defaultRegistry != "" {
+		opts = append(opts, crproxy.WithDefaultRegistry(defaultRegistry))
 	}
 
 	crp, err := crproxy.NewCRProxy(opts...)
