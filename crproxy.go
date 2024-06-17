@@ -453,8 +453,10 @@ func (c *CRProxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	r.URL.Scheme = c.getScheme(info.Host)
 	r.URL.Path = path
 
-	if !c.checkLimit(rw, r, info) {
-		return
+	if !c.isPrivileged(r.RemoteAddr) {
+		if !c.checkLimit(rw, r, info) {
+			return
+		}
 	}
 
 	if c.storageDriver != nil && info.Blobs != "" {
@@ -495,15 +497,13 @@ func (c *CRProxy) directResponse(rw http.ResponseWriter, r *http.Request, info *
 	rw.WriteHeader(resp.StatusCode)
 
 	if r.Method != http.MethodHead {
-		if !c.accumulativeLimit(rw, r, info, resp.ContentLength) {
-			return
-		}
-
 		buf := c.bytesPool.Get().([]byte)
 		defer c.bytesPool.Put(buf)
 		var body io.Reader = resp.Body
 
 		if !c.isPrivileged(r.RemoteAddr) {
+			c.accumulativeLimit(r, info, resp.ContentLength)
+
 			if c.totalBlobsSpeedLimit != nil && info.Blobs != "" {
 				body = c.totalBlobsSpeedLimit.Reader(body)
 			}
@@ -556,9 +556,12 @@ func (c *CRProxy) cacheBlobResponse(rw http.ResponseWriter, r *http.Request, inf
 			return
 		}
 
-		if !c.accumulativeLimit(rw, r, info, size) {
-			c.errorResponse(rw, r, nil)
-			return
+		if !c.isPrivileged(r.RemoteAddr) {
+			c.accumulativeLimit(r, info, size)
+			if !c.waitForLimit(r, info, size) {
+				c.errorResponse(rw, r, nil)
+				return
+			}
 		}
 
 		err = c.redirect(rw, r, blobPath)
@@ -601,9 +604,13 @@ func (c *CRProxy) cacheBlobResponse(rw http.ResponseWriter, r *http.Request, inf
 			rw.Header().Set("Content-Type", "application/octet-stream")
 			return
 		}
-		if !c.accumulativeLimit(rw, r, info, signal.size) {
-			c.errorResponse(rw, r, nil)
-			return
+
+		if !c.isPrivileged(r.RemoteAddr) {
+			c.accumulativeLimit(r, info, signal.size)
+			if !c.waitForLimit(r, info, signal.size) {
+				c.errorResponse(rw, r, nil)
+				return
+			}
 		}
 
 		err = c.redirect(rw, r, blobPath)
@@ -673,17 +680,6 @@ func (c *CRProxy) notFoundResponse(rw http.ResponseWriter, r *http.Request) {
 	http.NotFound(rw, r)
 }
 
-var (
-	ErrorCodeTooManyRequests = errcode.ErrorCodeTooManyRequests
-
-	ErrorCodeTooManyBandwidthsByBlob = errcode.Register("errcode", errcode.ErrorDescriptor{
-		Value:          "TOOMANYBANDWIDTHS",
-		Message:        "blob too many bandwidths",
-		Description:    `Blobs are accessed too much`,
-		HTTPStatusCode: http.StatusTooManyRequests,
-	})
-)
-
 func addr(str string) string {
 	i := strings.LastIndex(str, ":")
 	if i <= 0 {
@@ -703,10 +699,6 @@ func (c *CRProxy) isPrivileged(a string) bool {
 }
 
 func (c *CRProxy) checkLimit(rw http.ResponseWriter, r *http.Request, info *PathInfo) bool {
-	if c.isPrivileged(r.RemoteAddr) {
-		return true
-	}
-
 	if c.ipsSpeedLimit != nil && info.Blobs != "" {
 		address := addr(r.RemoteAddr)
 		bps, _ := c.speedLimitRecord.LoadOrStore(address, geario.NewBPSAver(c.ipsSpeedLimitDuration))
@@ -724,7 +716,7 @@ func (c *CRProxy) checkLimit(rw http.ResponseWriter, r *http.Request, info *Path
 					}
 				}
 			} else {
-				err := ErrorCodeTooManyRequests
+				err := errcode.ErrorCodeTooManyRequests
 				rw.Header().Set("X-Retry-After", strconv.FormatInt(bps.Next().Unix(), 10))
 				errcode.ServeJSON(rw, err)
 				return false
@@ -735,11 +727,7 @@ func (c *CRProxy) checkLimit(rw http.ResponseWriter, r *http.Request, info *Path
 	return true
 }
 
-func (c *CRProxy) accumulativeLimit(rw http.ResponseWriter, r *http.Request, info *PathInfo, size int64) bool {
-	if c.isPrivileged(r.RemoteAddr) {
-		return true
-	}
-
+func (c *CRProxy) waitForLimit(r *http.Request, info *PathInfo, size int64) bool {
 	if c.blobsSpeedLimit != nil && info.Blobs != "" {
 		dur := GetSleepDuration(geario.B(size), *c.blobsSpeedLimit, c.blobsSpeedLimitDuration)
 		if c.logger != nil {
@@ -752,14 +740,16 @@ func (c *CRProxy) accumulativeLimit(rw http.ResponseWriter, r *http.Request, inf
 		}
 	}
 
+	return true
+}
+
+func (c *CRProxy) accumulativeLimit(r *http.Request, info *PathInfo, size int64) {
 	if c.ipsSpeedLimit != nil && info.Blobs != "" {
 		bps, ok := c.speedLimitRecord.Load(addr(r.RemoteAddr))
 		if ok {
 			bps.Add(geario.B(size))
 		}
 	}
-
-	return true
 }
 
 func (c *CRProxy) redirect(rw http.ResponseWriter, r *http.Request, blobPath string) error {
