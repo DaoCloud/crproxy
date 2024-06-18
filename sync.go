@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -43,19 +44,43 @@ func (c *CRProxy) Sync(rw http.ResponseWriter, r *http.Request) {
 
 	query := r.URL.Query()
 
+	rw.Header().Set("Content-Type", "application/json")
+
 	images := query["image"]
+
+	flusher, _ := rw.(http.Flusher)
+
+	encoder := json.NewEncoder(rw)
 	for _, image := range images {
 		if image == "" {
 			continue
 		}
-		err := c.SyncImageLayer(r.Context(), image, nil)
+		err := c.SyncImageLayer(r.Context(), image, nil, func(sp SyncProgress) error {
+			err := encoder.Encode(sp)
+			if err != nil {
+				return err
+			}
+
+			if flusher != nil {
+				flusher.Flush()
+			}
+
+			return nil
+		})
 		if err != nil {
 			c.errorResponse(rw, r, err)
 		}
 	}
 }
 
-func (c *CRProxy) SyncImageLayer(ctx context.Context, image string, filter func(pf manifestlist.PlatformSpec) bool) error {
+type SyncProgress struct {
+	Digest   string                     `json:"digest,omitempty"`
+	Size     int64                      `json:"size,omitempty"`
+	Status   string                     `json:"status,omitempty"`
+	Platform *manifestlist.PlatformSpec `json:"platform,omitempty"`
+}
+
+func (c *CRProxy) SyncImageLayer(ctx context.Context, image string, filter func(pf manifestlist.PlatformSpec) bool, cb func(sp SyncProgress) error) error {
 	ref, err := reference.Parse(image)
 	if err != nil {
 		return err
@@ -94,7 +119,25 @@ func (c *CRProxy) SyncImageLayer(ctx context.Context, image string, filter func(
 	buf := c.bytesPool.Get().([]byte)
 	defer c.bytesPool.Put(buf)
 
-	err = getLayerFromManifestList(ctx, ms, ref, filter, func(dgst digest.Digest, size int64) error {
+	uniq := map[digest.Digest]struct{}{}
+	cb0 := func(dgst digest.Digest, size int64, pf *manifestlist.PlatformSpec) error {
+		_, ok := uniq[dgst]
+		if ok {
+			if cb != nil {
+				err = cb(SyncProgress{
+					Digest:   dgst.String(),
+					Size:     size,
+					Status:   "SKIP",
+					Platform: pf,
+				})
+				if err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+		uniq[dgst] = struct{}{}
+
 		blobPath := blobCachePath(dgst.String())
 		stat, err := c.storageDriver.Stat(ctx, blobPath)
 		if err == nil {
@@ -104,15 +147,37 @@ func (c *CRProxy) SyncImageLayer(ctx context.Context, image string, filter func(
 					if c.logger != nil {
 						c.logger.Println("skip blob", dgst)
 					}
+
+					if cb != nil {
+						err = cb(SyncProgress{
+							Digest:   dgst.String(),
+							Size:     size,
+							Status:   "SKIP",
+							Platform: pf,
+						})
+						if err != nil {
+							return err
+						}
+					}
 					return nil
 				}
 				if c.logger != nil {
 					c.logger.Println("size is not meeting expectations", dgst, size, gotSize)
 				}
-				return nil
 			} else {
 				if c.logger != nil {
 					c.logger.Println("skip blob", dgst)
+				}
+				if cb != nil {
+					err = cb(SyncProgress{
+						Digest:   dgst.String(),
+						Size:     -1,
+						Status:   "SKIP",
+						Platform: pf,
+					})
+					if err != nil {
+						return err
+					}
 				}
 				return nil
 			}
@@ -154,15 +219,29 @@ func (c *CRProxy) SyncImageLayer(ctx context.Context, image string, filter func(
 		if c.logger != nil {
 			c.logger.Println("sync blob", dgst)
 		}
+
+		if cb != nil {
+			err = cb(SyncProgress{
+				Digest:   dgst.String(),
+				Size:     n,
+				Status:   "CACHE",
+				Platform: pf,
+			})
+			if err != nil {
+				return err
+			}
+		}
 		return nil
-	})
+	}
+
+	err = getLayerFromManifestList(ctx, ms, ref, filter, cb0)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func getLayerFromManifestList(ctx context.Context, ms distribution.ManifestService, ref reference.Reference, filter func(pf manifestlist.PlatformSpec) bool, cb func(dgst digest.Digest, size int64) error) error {
+func getLayerFromManifestList(ctx context.Context, ms distribution.ManifestService, ref reference.Reference, filter func(pf manifestlist.PlatformSpec) bool, cb func(dgst digest.Digest, size int64, pf *manifestlist.PlatformSpec) error) error {
 	var (
 		m   distribution.Manifest
 		err error
@@ -182,16 +261,6 @@ func getLayerFromManifestList(ctx context.Context, ms distribution.ManifestServi
 		return fmt.Errorf("%s no reference to any source", ref)
 	}
 
-	uniq := map[digest.Digest]struct{}{}
-	cb0 := func(dgst digest.Digest, size int64) error {
-		_, ok := uniq[dgst]
-		if ok {
-			return nil
-		}
-		uniq[dgst] = struct{}{}
-		return cb(dgst, size)
-	}
-
 	switch m := m.(type) {
 	case *manifestlist.DeserializedManifestList:
 		for _, mfest := range m.ManifestList.Manifests {
@@ -203,14 +272,18 @@ func getLayerFromManifestList(ctx context.Context, ms distribution.ManifestServi
 			if err != nil {
 				return err
 			}
-			err = getLayerFromManifest(m0, cb0)
+			err = getLayerFromManifest(m0, func(dgst digest.Digest, size int64) error {
+				return cb(dgst, size, &mfest.Platform)
+			})
 			if err != nil {
 				return err
 			}
 		}
 		return nil
 	default:
-		return getLayerFromManifest(m, cb0)
+		return getLayerFromManifest(m, func(dgst digest.Digest, size int64) error {
+			return cb(dgst, size, nil)
+		})
 	}
 }
 
