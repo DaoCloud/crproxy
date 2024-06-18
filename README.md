@@ -2,30 +2,29 @@
 
 CRProxy is a generic image proxy
 
-Add the prefix `cr.zsm.io/` to all places that need to use images
+Add the prefix `m.daocloud.io/` to all places that need to use images
 
 - [English](https://github.com/wzshiming/crproxy/blob/master/README.md)
 - [简体中文](https://github.com/wzshiming/crproxy/blob/master/README_cn.md)
 
-## cr.zsm.io
+## m.daocloud.io
 
-This is an experimental server and is not guaranteed to be stable,  
-so you can deploy your own image proxy server if you need to.
+you can deploy your own image proxy server if you need to.
 
 [Refer to](https://github.com/wzshiming/crproxy/tree/master/examples/default)
 
 ## On Docker
 
-Just add the prefix `cr.zsm.io/`
+Just add the prefix `m.daocloud.io/`
 
 ``` bash
-docker pull cr.zsm.io/docker.io/library/busybox
+docker pull m.daocloud.io/docker.io/library/busybox
 ```
 
 ## On Kubernetes
 
-Just add the prefix `cr.zsm.io/`
+Just add the prefix `m.daocloud.io/`
 
 ``` yaml
-image: cr.zsm.io/docker.io/library/busybox
+image: m.daocloud.io/docker.io/library/busybox
 ```

@@ -18,7 +18,7 @@ cd crproxy/examples/default
 ### 修改gateway域名
 vim start.sh 第五行
 ```
-原：gateway=cr.zsm.io 
+原：gateway=m.daocloud.io 
 修改为：gateway=kubesre.xyz #改成你自己的域名
 ```
 ### 启动服务

@@ -2,7 +2,7 @@
 
 docker-compose up -d
 
-gateway=cr.zsm.io
+gateway=m.daocloud.io
 
 declare -A mapping=()
 
