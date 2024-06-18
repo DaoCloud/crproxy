@@ -121,7 +121,7 @@ func main() {
 			"docker.io": "registry-1.docker.io",
 			"ollama.ai": "registry.ollama.ai",
 		}),
-		crproxy.WithPathInfoModifyFunc(func(info *crproxy.PathInfo) *crproxy.PathInfo {
+		crproxy.WithPathInfoModifyFunc(func(info *crproxy.ModifyInfo) *crproxy.ModifyInfo {
 			// docker.io/busybox => docker.io/library/busybox
 			if info.Host == "registry-1.docker.io" && !strings.Contains(info.Image, "/") {
 				info.Image = "library/" + info.Image

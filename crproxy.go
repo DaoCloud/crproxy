@@ -36,12 +36,17 @@ type Logger interface {
 	Println(v ...interface{})
 }
 
+type ModifyInfo struct {
+	Host  string
+	Image string
+}
+
 type CRProxy struct {
 	baseClient              *http.Client
 	challengeManager        challenge.Manager
 	clientset               maps.SyncMap[string, *lru.LRU[string, *http.Client]]
 	clientSize              int
-	modify                  func(info *PathInfo) *PathInfo
+	modify                  func(info *ModifyInfo) *ModifyInfo
 	insecureDomain          map[string]struct{}
 	domainDisableKeepAlives map[string]struct{}
 	domainAlias             map[string]string
@@ -155,7 +160,7 @@ func WithDomainAlias(domainAlias map[string]string) Option {
 	}
 }
 
-func WithPathInfoModifyFunc(modify func(info *PathInfo) *PathInfo) Option {
+func WithPathInfoModifyFunc(modify func(info *ModifyInfo) *ModifyInfo) Option {
 	return func(c *CRProxy) {
 		c.modify = modify
 	}
@@ -430,7 +435,12 @@ func (c *CRProxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	info.Host = c.getDomainAlias(info.Host)
 
 	if c.modify != nil {
-		info = c.modify(info)
+		n := c.modify(&ModifyInfo{
+			Host:  info.Host,
+			Image: info.Image,
+		})
+		info.Host = n.Host
+		info.Image = n.Image
 	}
 
 	if c.blockFunc != nil && c.blockFunc(info) {

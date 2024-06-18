@@ -29,10 +29,10 @@ func (n namedWithoutDomain) Name() string {
 	return n.name
 }
 
-func newNameWithoutDomain(name reference.Named) reference.Named {
+func newNameWithoutDomain(named reference.Named, name string) reference.Named {
 	return namedWithoutDomain{
-		Reference: name,
-		name:      reference.Path(name),
+		Reference: named,
+		name:      name,
 	}
 }
 
@@ -95,13 +95,23 @@ func (c *CRProxy) SyncImageLayer(ctx context.Context, image string, filter func(
 	host := reference.Domain(named)
 
 	host = c.getDomainAlias(host)
+	var name reference.Named
+
+	if c.modify != nil {
+		n := c.modify(&ModifyInfo{
+			Host:  host,
+			Image: reference.Path(named),
+		})
+		host = n.Host
+		name = newNameWithoutDomain(named, n.Image)
+	} else {
+		name = newNameWithoutDomain(named, reference.Path(named))
+	}
 
 	err = c.ping(host)
 	if err != nil {
 		return err
 	}
-
-	name := newNameWithoutDomain(named)
 
 	cli := c.getClientset(host, name.Name())
 
