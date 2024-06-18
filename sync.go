@@ -69,6 +69,7 @@ func (c *CRProxy) Sync(rw http.ResponseWriter, r *http.Request) {
 		})
 		if err != nil {
 			c.errorResponse(rw, r, err)
+			return
 		}
 	}
 }

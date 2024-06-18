@@ -681,7 +681,12 @@ func (c *CRProxy) errorResponse(rw http.ResponseWriter, r *http.Request, err err
 			c.logger.Println(e)
 		}
 	}
-	errcode.ServeJSON(rw, errcode.ErrorCodeUnknown)
+
+	if err == nil {
+		err = errcode.ErrorCodeUnknown
+	}
+
+	errcode.ServeJSON(rw, err)
 }
 
 func (c *CRProxy) notFoundResponse(rw http.ResponseWriter, r *http.Request) {
