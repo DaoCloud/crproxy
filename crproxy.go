@@ -213,8 +213,12 @@ func NewCRProxy(opts ...Option) (*CRProxy, error) {
 	return c, nil
 }
 
+func (c *CRProxy) hostURL(host string) string {
+	return c.getScheme(host) + "://" + host
+}
+
 func (c *CRProxy) pingURL(host string) string {
-	return c.getScheme(host) + "://" + host + prefix
+	return c.hostURL(host) + prefix
 }
 
 func (c *CRProxy) getScheme(host string) string {
@@ -517,11 +521,15 @@ func (c *CRProxy) directResponse(rw http.ResponseWriter, r *http.Request, info *
 	}
 }
 
+func blobCachePath(blob string) string {
+	blob = strings.TrimPrefix(blob, "sha256:")
+	return path.Join("/docker/registry/v2/blobs/sha256", blob[:2], blob, "data")
+}
+
 func (c *CRProxy) cacheBlobResponse(rw http.ResponseWriter, r *http.Request, info *PathInfo) {
 	ctx := r.Context()
 
-	blob := strings.TrimPrefix(info.Blobs, "sha256:")
-	blobPath := path.Join("/docker/registry/v2/blobs/sha256", blob[:2], blob, "data")
+	blobPath := blobCachePath(info.Blobs)
 
 	closeValue, loaded := c.mutCache.LoadOrStore(blobPath, make(chan struct{}))
 	closeCh := closeValue.(chan struct{})

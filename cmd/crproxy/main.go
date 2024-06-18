@@ -246,6 +246,8 @@ func main() {
 
 	mux.Handle("/v2/", crp)
 
+	mux.HandleFunc("/internal/api/image/sync", crp.Sync)
+
 	if enablePprof {
 		mux.HandleFunc("/debug/pprof/", pprof.Index)
 		mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
