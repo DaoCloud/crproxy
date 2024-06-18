@@ -732,10 +732,18 @@ func (c *CRProxy) checkLimit(rw http.ResponseWriter, r *http.Request, info *Path
 			}
 			if c.limitDelay {
 				for bps.Aver() > *c.ipsSpeedLimit {
+					wait := time.Second
+					n := bps.Next()
+					if !n.IsZero() {
+						wait = bps.Next().Sub(time.Now())
+						if wait < time.Second {
+							wait = time.Second
+						}
+					}
 					select {
 					case <-r.Context().Done():
 						return false
-					case <-time.After(bps.Next().Sub(time.Now())):
+					case <-time.After(wait):
 					}
 				}
 			} else {
