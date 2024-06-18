@@ -1,4 +1,4 @@
-module github.com/wzshiming/crproxy
+module github.com/daocloud/crproxy
 
 go 1.21
 
