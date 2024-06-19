@@ -528,6 +528,12 @@ func (c *CRProxy) directResponse(rw http.ResponseWriter, r *http.Request, info *
 		resp.Body.Close()
 	}()
 
+	switch resp.StatusCode {
+	case http.StatusUnauthorized, http.StatusForbidden:
+		errcode.ServeJSON(rw, errcode.ErrorCodeDenied)
+		return
+	}
+
 	resp.Header.Del("Docker-Ratelimit-Source")
 
 	if resp.StatusCode == http.StatusOK {
@@ -684,6 +690,14 @@ func (c *CRProxy) cacheBlobContent(r *http.Request, blobPath string, info *PathI
 	defer func() {
 		resp.Body.Close()
 	}()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		switch resp.StatusCode {
+		case http.StatusUnauthorized, http.StatusForbidden:
+			return 0, errcode.ErrorCodeDenied
+		}
+		return 0, errcode.ErrorCodeUnknown.WithMessage(fmt.Sprintf("Source response code %s", resp.StatusCode))
+	}
 
 	buf := c.bytesPool.Get().([]byte)
 	defer c.bytesPool.Put(buf)
