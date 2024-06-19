@@ -71,11 +71,18 @@ type CRProxy struct {
 	limitDelay              bool
 	privilegedIPSet         map[string]struct{}
 	disableTagsList         bool
+	simpleAuth              bool
 
 	defaultRegistry string
 }
 
 type Option func(c *CRProxy)
+
+func WithSimpleAuth(b bool) Option {
+	return func(c *CRProxy) {
+		c.simpleAuth = b
+	}
+}
 
 func WithDefaultRegistry(target string) Option {
 	return func(c *CRProxy) {
@@ -421,6 +428,11 @@ func (c *CRProxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		errcode.ServeJSON(rw, errcode.ErrorCodeUnsupported)
 		return
 	}
+	if c.simpleAuth && !c.authorization(rw, r) {
+		c.authenticate(rw, r)
+		return
+	}
+
 	oriPath := r.URL.Path
 	if oriPath == prefix {
 		apiBase(rw, r)

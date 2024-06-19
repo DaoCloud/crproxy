@@ -46,6 +46,7 @@ var (
 	disableTagsList      bool
 	enablePprof          bool
 	defaultRegistry      string
+	simpleAuth           bool
 )
 
 func init() {
@@ -69,6 +70,7 @@ func init() {
 	pflag.BoolVar(&disableTagsList, "disable-tags-list", false, "disable tags list")
 	pflag.BoolVar(&enablePprof, "enable-pprof", false, "Enable pprof")
 	pflag.StringVar(&defaultRegistry, "default-registry", "", "default registry used for non full-path docker pull, like:docker.io")
+	pflag.BoolVar(&simpleAuth, "simple-auth", false, "enable simple auth")
 	pflag.Parse()
 }
 
@@ -244,6 +246,10 @@ func main() {
 		opts = append(opts, crproxy.WithDefaultRegistry(defaultRegistry))
 	}
 
+	if simpleAuth {
+		opts = append(opts, crproxy.WithSimpleAuth(true))
+	}
+
 	crp, err := crproxy.NewCRProxy(opts...)
 	if err != nil {
 		logger.Println("failed to NewCRProxy:", err)
@@ -251,6 +257,7 @@ func main() {
 	}
 
 	mux.Handle("/v2/", crp)
+	mux.HandleFunc("/auth/token", crp.AuthToken)
 
 	mux.HandleFunc("/internal/api/image/sync", crp.Sync)
 
