@@ -345,7 +345,21 @@ func (c *CRProxy) ping(host string) error {
 	if c.logger != nil {
 		c.logger.Println("ping", host)
 	}
-	resp, err := c.baseClient.Get(c.pingURL(host))
+
+	ep := c.pingURL(host)
+	e, err := url.Parse(ep)
+	if err != nil {
+		return err
+	}
+	challenge, err := c.challengeManager.GetChallenges(*e)
+	if err == nil && len(challenge) != 0 {
+		return err
+	}
+
+	if c.logger != nil {
+		c.logger.Println("ping", host)
+	}
+	resp, err := c.baseClient.Get(ep)
 	if err != nil {
 		return err
 	}
