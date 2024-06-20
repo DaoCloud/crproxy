@@ -658,7 +658,7 @@ func (c *CRProxy) cacheBlobResponse(rw http.ResponseWriter, r *http.Request, inf
 
 	go func() {
 		defer doneCache()
-		size, err := c.cacheBlobContent(r, blobPath, info)
+		size, err := c.cacheBlobContent(context.Background(), r, blobPath, info)
 		signalCh <- repo{
 			err:  err,
 			size: size,
@@ -698,9 +698,9 @@ func (c *CRProxy) cacheBlobResponse(rw http.ResponseWriter, r *http.Request, inf
 	}
 }
 
-func (c *CRProxy) cacheBlobContent(r *http.Request, blobPath string, info *PathInfo) (int64, error) {
+func (c *CRProxy) cacheBlobContent(ctx context.Context, r *http.Request, blobPath string, info *PathInfo) (int64, error) {
 	cli := c.getClientset(info.Host, info.Image)
-	resp, err := c.doWithAuth(cli, r, info.Host)
+	resp, err := c.doWithAuth(cli, r.WithContext(ctx), info.Host)
 	if err != nil {
 		return 0, err
 	}
@@ -719,7 +719,7 @@ func (c *CRProxy) cacheBlobContent(r *http.Request, blobPath string, info *PathI
 	buf := c.bytesPool.Get().([]byte)
 	defer c.bytesPool.Put(buf)
 
-	fw, err := c.storageDriver.Writer(context.Background(), blobPath, false)
+	fw, err := c.storageDriver.Writer(ctx, blobPath, false)
 	if err != nil {
 		return 0, err
 	}
@@ -753,7 +753,7 @@ func (c *CRProxy) errorResponse(rw http.ResponseWriter, r *http.Request, err err
 	if err != nil {
 		e := err.Error()
 		if c.logger != nil {
-			c.logger.Println(e)
+			c.logger.Println("error response", r.RemoteAddr, e)
 		}
 	}
 
@@ -826,13 +826,15 @@ func (c *CRProxy) checkLimit(rw http.ResponseWriter, r *http.Request, info *Path
 func (c *CRProxy) waitForLimit(r *http.Request, info *PathInfo, size int64) bool {
 	if c.blobsSpeedLimit != nil && info.Blobs != "" {
 		dur := GetSleepDuration(geario.B(size), *c.blobsSpeedLimit, c.blobsSpeedLimitDuration)
-		if c.logger != nil {
-			c.logger.Println("delay request", geario.B(size), dur)
-		}
-		select {
-		case <-r.Context().Done():
-			return false
-		case <-time.After(dur):
+		if dur > 0 {
+			if c.logger != nil {
+				c.logger.Println("delay request", r.RemoteAddr, geario.B(size), dur)
+			}
+			select {
+			case <-r.Context().Done():
+				return false
+			case <-time.After(dur):
+			}
 		}
 	}
 
