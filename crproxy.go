@@ -23,6 +23,7 @@ import (
 	"github.com/distribution/distribution/v3/registry/client/transport"
 	storagedriver "github.com/distribution/distribution/v3/registry/storage/driver"
 	"github.com/wzshiming/geario"
+	"github.com/wzshiming/hostmatcher"
 	"github.com/wzshiming/httpseek"
 	"github.com/wzshiming/lru"
 )
@@ -36,9 +37,9 @@ type Logger interface {
 	Println(v ...interface{})
 }
 
-type ModifyInfo struct {
-	Host  string
-	Image string
+type ImageInfo struct {
+	Host string
+	Name string
 }
 
 type CRProxy struct {
@@ -46,7 +47,7 @@ type CRProxy struct {
 	challengeManager        challenge.Manager
 	clientset               maps.SyncMap[string, *lru.LRU[string, *http.Client]]
 	clientSize              int
-	modify                  func(info *ModifyInfo) *ModifyInfo
+	modify                  func(info *ImageInfo) *ImageInfo
 	insecureDomain          map[string]struct{}
 	domainDisableKeepAlives map[string]struct{}
 	domainAlias             map[string]string
@@ -61,7 +62,8 @@ type CRProxy struct {
 	blobsSpeedLimitDuration time.Duration
 	ipsSpeedLimit           *geario.B
 	ipsSpeedLimitDuration   time.Duration
-	blockFunc               func(*PathInfo) bool
+	blockFunc               func(*ImageInfo) bool
+	blockMessage            string
 	retry                   int
 	retryInterval           time.Duration
 	storageDriver           storagedriver.StorageDriver
@@ -72,6 +74,7 @@ type CRProxy struct {
 	privilegedIPSet         map[string]struct{}
 	disableTagsList         bool
 	simpleAuth              bool
+	matcher                 hostmatcher.Matcher
 
 	defaultRegistry string
 }
@@ -175,7 +178,7 @@ func WithDomainAlias(domainAlias map[string]string) Option {
 	}
 }
 
-func WithPathInfoModifyFunc(modify func(info *ModifyInfo) *ModifyInfo) Option {
+func WithPathInfoModifyFunc(modify func(info *ImageInfo) *ImageInfo) Option {
 	return func(c *CRProxy) {
 		c.modify = modify
 	}
@@ -196,9 +199,15 @@ func WithDisableKeepAlives(disableKeepAlives []string) Option {
 	}
 }
 
-func WithBlockFunc(blockFunc func(info *PathInfo) bool) Option {
+func WithBlockFunc(blockFunc func(info *ImageInfo) bool) Option {
 	return func(c *CRProxy) {
 		c.blockFunc = blockFunc
+	}
+}
+
+func WithBlockMessage(msg string) Option {
+	return func(c *CRProxy) {
+		c.blockMessage = msg
 	}
 }
 
@@ -469,16 +478,23 @@ func (c *CRProxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	info.Host = c.getDomainAlias(info.Host)
 
 	if c.modify != nil {
-		n := c.modify(&ModifyInfo{
-			Host:  info.Host,
-			Image: info.Image,
+		n := c.modify(&ImageInfo{
+			Host: info.Host,
+			Name: info.Image,
 		})
 		info.Host = n.Host
-		info.Image = n.Image
+		info.Image = n.Name
 	}
 
-	if c.blockFunc != nil && c.blockFunc(info) {
-		errcode.ServeJSON(rw, errcode.ErrorCodeDenied)
+	if c.blockFunc != nil && c.blockFunc(&ImageInfo{
+		Host: info.Host,
+		Name: info.Image,
+	}) {
+		if c.blockMessage != "" {
+			errcode.ServeJSON(rw, errcode.ErrorCodeDenied.WithMessage(c.blockMessage))
+		} else {
+			errcode.ServeJSON(rw, errcode.ErrorCodeDenied)
+		}
 		return
 	}
 

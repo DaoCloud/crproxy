@@ -1,8 +1,11 @@
 package main
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -16,6 +19,7 @@ import (
 	"github.com/gorilla/handlers"
 	"github.com/spf13/pflag"
 	"github.com/wzshiming/geario"
+	"github.com/wzshiming/hostmatcher"
 
 	_ "github.com/daocloud/crproxy/storage/driver/oss"
 	_ "github.com/distribution/distribution/v3/registry/storage/driver/azure"
@@ -26,27 +30,29 @@ import (
 )
 
 var (
-	behind               bool
-	address              string
-	userpass             []string
-	disableKeepAlives    []string
-	limitDelay           bool
-	blobsSpeedLimit      string
-	ipsSpeedLimit        string
-	totalBlobsSpeedLimit string
-	allowHostList        []string
-	blockImageList       []string
-	privilegedIPList     []string
-	retry                int
-	retryInterval        time.Duration
-	storageDriver        string
-	storageParameters    map[string]string
-	linkExpires          time.Duration
-	redirectLinks        string
-	disableTagsList      bool
-	enablePprof          bool
-	defaultRegistry      string
-	simpleAuth           bool
+	behind                 bool
+	address                string
+	userpass               []string
+	disableKeepAlives      []string
+	limitDelay             bool
+	blobsSpeedLimit        string
+	ipsSpeedLimit          string
+	totalBlobsSpeedLimit   string
+	allowHostList          []string
+	allowImageListFromFile string
+	blockImageList         []string
+	blockMessage           string
+	privilegedIPList       []string
+	retry                  int
+	retryInterval          time.Duration
+	storageDriver          string
+	storageParameters      map[string]string
+	linkExpires            time.Duration
+	redirectLinks          string
+	disableTagsList        bool
+	enablePprof            bool
+	defaultRegistry        string
+	simpleAuth             bool
 )
 
 func init() {
@@ -59,7 +65,9 @@ func init() {
 	pflag.StringVar(&ipsSpeedLimit, "ips-speed-limit", "", "ips speed limit per second (default unlimited)")
 	pflag.StringVar(&totalBlobsSpeedLimit, "total-blobs-speed-limit", "", "total blobs speed limit per second (default unlimited)")
 	pflag.StringSliceVar(&allowHostList, "allow-host-list", nil, "allow host list")
+	pflag.StringVar(&allowImageListFromFile, "allow-image-list-from-file", "", "allow image list from file")
 	pflag.StringSliceVar(&blockImageList, "block-image-list", nil, "block image list")
+	pflag.StringVar(&blockMessage, "block-message", "", "block message")
 	pflag.StringSliceVar(&privilegedIPList, "privileged-ip-list", nil, "privileged IP list")
 	pflag.IntVar(&retry, "retry", 0, "retry times")
 	pflag.DurationVar(&retryInterval, "retry-interval", 0, "retry interval")
@@ -125,13 +133,13 @@ func main() {
 			"docker.io": "registry-1.docker.io",
 			"ollama.ai": "registry.ollama.ai",
 		}),
-		crproxy.WithPathInfoModifyFunc(func(info *crproxy.ModifyInfo) *crproxy.ModifyInfo {
+		crproxy.WithPathInfoModifyFunc(func(info *crproxy.ImageInfo) *crproxy.ImageInfo {
 			// docker.io/busybox => docker.io/library/busybox
-			if info.Host == "registry-1.docker.io" && !strings.Contains(info.Image, "/") {
-				info.Image = "library/" + info.Image
+			if info.Host == "registry-1.docker.io" && !strings.Contains(info.Name, "/") {
+				info.Name = "library/" + info.Name
 			}
-			if info.Host == "registry.ollama.ai" && !strings.Contains(info.Image, "/") {
-				info.Image = "library/" + info.Image
+			if info.Host == "registry.ollama.ai" && !strings.Contains(info.Name, "/") {
+				info.Name = "library/" + info.Name
 			}
 			return info
 		}),
@@ -162,7 +170,31 @@ func main() {
 		}
 	}
 
-	if len(blockImageList) != 0 || len(allowHostList) != 0 {
+	if allowImageListFromFile != "" {
+		f, err := os.ReadFile(allowImageListFromFile)
+		if err != nil {
+			logger.Println("can't read allow list file %s", allowImageListFromFile)
+			os.Exit(1)
+		}
+
+		lines := bufio.NewReader(bytes.NewReader(f))
+		hosts := []string{}
+		for {
+			line, _, err := lines.ReadLine()
+			if err == io.EOF {
+				break
+			}
+			h := strings.TrimSpace(string(line))
+			if len(h) == 0 {
+				continue
+			}
+			hosts = append(hosts, h)
+		}
+		matcher := hostmatcher.NewMatcher(hosts)
+		opts = append(opts, crproxy.WithBlockFunc(func(info *crproxy.ImageInfo) bool {
+			return !matcher.Match(info.Host + "/" + info.Name)
+		}))
+	} else if len(blockImageList) != 0 || len(allowHostList) != 0 {
 		allowHostMap := map[string]struct{}{}
 		for _, host := range allowHostList {
 			allowHostMap[host] = struct{}{}
@@ -171,7 +203,7 @@ func main() {
 		for _, image := range blockImageList {
 			blockImageMap[image] = struct{}{}
 		}
-		opts = append(opts, crproxy.WithBlockFunc(func(info *crproxy.PathInfo) bool {
+		opts = append(opts, crproxy.WithBlockFunc(func(info *crproxy.ImageInfo) bool {
 			if len(allowHostMap) != 0 {
 				_, ok := allowHostMap[info.Host]
 				if !ok {
@@ -180,7 +212,7 @@ func main() {
 			}
 
 			if len(blockImageMap) != 0 {
-				image := info.Host + "/" + info.Image
+				image := info.Host + "/" + info.Name
 				_, ok := blockImageMap[image]
 				if ok {
 					return true
@@ -189,6 +221,10 @@ func main() {
 
 			return false
 		}))
+	}
+
+	if blockMessage != "" {
+		opts = append(opts, crproxy.WithBlockMessage(blockMessage))
 	}
 
 	if len(privilegedIPList) != 0 {

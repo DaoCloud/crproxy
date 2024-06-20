@@ -97,15 +97,23 @@ func (c *CRProxy) SyncImageLayer(ctx context.Context, image string, filter func(
 	host = c.getDomainAlias(host)
 	var name reference.Named
 
+	info := &ImageInfo{
+		Host: host,
+		Name: reference.Path(named),
+	}
 	if c.modify != nil {
-		n := c.modify(&ModifyInfo{
-			Host:  host,
-			Image: reference.Path(named),
-		})
-		host = n.Host
-		name = newNameWithoutDomain(named, n.Image)
+		info = c.modify(info)
+		name = newNameWithoutDomain(named, info.Name)
 	} else {
-		name = newNameWithoutDomain(named, reference.Path(named))
+		name = newNameWithoutDomain(named, info.Name)
+	}
+
+	if c.blockFunc != nil && c.blockFunc(info) {
+		if c.blockMessage != "" {
+			return errcode.ErrorCodeDenied.WithMessage(c.blockMessage)
+		} else {
+			return errcode.ErrorCodeDenied
+		}
 	}
 
 	err = c.ping(host)
