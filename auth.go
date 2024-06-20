@@ -48,7 +48,7 @@ func (c *CRProxy) AuthToken(rw http.ResponseWriter, r *http.Request) {
 
 func (c *CRProxy) authenticate(rw http.ResponseWriter, r *http.Request) {
 	var scheme = "http"
-	if r.TLS != nil {
+	if strings.HasPrefix(r.Referer(), "https://") {
 		scheme = "https"
 	}
 	header := fmt.Sprintf("Bearer realm=%q,service=%q", scheme+"://"+r.Host+"/auth/token", r.Host)
