@@ -53,6 +53,7 @@ var (
 	enablePprof            bool
 	defaultRegistry        string
 	simpleAuth             bool
+	tokenURL               string
 )
 
 func init() {
@@ -79,6 +80,7 @@ func init() {
 	pflag.BoolVar(&enablePprof, "enable-pprof", false, "Enable pprof")
 	pflag.StringVar(&defaultRegistry, "default-registry", "", "default registry used for non full-path docker pull, like:docker.io")
 	pflag.BoolVar(&simpleAuth, "simple-auth", false, "enable simple auth")
+	pflag.StringVar(&tokenURL, "token-url", "", "token url")
 	pflag.Parse()
 }
 
@@ -283,7 +285,7 @@ func main() {
 	}
 
 	if simpleAuth {
-		opts = append(opts, crproxy.WithSimpleAuth(true))
+		opts = append(opts, crproxy.WithSimpleAuth(true, tokenURL))
 	}
 
 	crp, err := crproxy.NewCRProxy(opts...)

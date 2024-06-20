@@ -74,6 +74,7 @@ type CRProxy struct {
 	privilegedIPSet         map[string]struct{}
 	disableTagsList         bool
 	simpleAuth              bool
+	tokenURL                string
 	matcher                 hostmatcher.Matcher
 
 	defaultRegistry string
@@ -81,9 +82,10 @@ type CRProxy struct {
 
 type Option func(c *CRProxy)
 
-func WithSimpleAuth(b bool) Option {
+func WithSimpleAuth(b bool, tokenURL string) Option {
 	return func(c *CRProxy) {
 		c.simpleAuth = b
+		c.tokenURL = tokenURL
 	}
 }
 

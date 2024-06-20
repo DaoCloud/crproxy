@@ -47,11 +47,15 @@ func (c *CRProxy) AuthToken(rw http.ResponseWriter, r *http.Request) {
 }
 
 func (c *CRProxy) authenticate(rw http.ResponseWriter, r *http.Request) {
-	var scheme = "http"
-	if r.TLS != nil {
-		scheme = "https"
+	tokenURL := c.tokenURL
+	if tokenURL == "" {
+		var scheme = "http"
+		if r.TLS != nil {
+			scheme = "https"
+		}
+		tokenURL = scheme + "://" + r.Host + "/auth/token"
 	}
-	header := fmt.Sprintf("Bearer realm=%q,service=%q", scheme+"://"+r.Host+"/auth/token", r.Host)
+	header := fmt.Sprintf("Bearer realm=%q,service=%q", tokenURL, r.Host)
 	rw.Header().Set("WWW-Authenticate", header)
 	c.errorResponse(rw, r, errcode.ErrorCodeUnauthorized)
 }
