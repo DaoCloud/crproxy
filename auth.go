@@ -84,7 +84,7 @@ func (c *CRProxy) authorization(rw http.ResponseWriter, r *http.Request) bool {
 }
 
 type tokenInfo struct {
-	Token     string    `json:"Token,omitempty"`
+	Token     string    `json:"token,omitempty"`
 	ExpiresIn int64     `json:"expires_in,omitempty"`
 	IssuedAt  time.Time `json:"issued_at,omitempty"`
 }
