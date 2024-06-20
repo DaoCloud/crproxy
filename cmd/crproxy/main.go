@@ -43,6 +43,7 @@ var (
 	blockImageList         []string
 	blockMessage           string
 	privilegedIPList       []string
+	privilegedNoAuth       bool
 	retry                  int
 	retryInterval          time.Duration
 	storageDriver          string
@@ -70,6 +71,7 @@ func init() {
 	pflag.StringSliceVar(&blockImageList, "block-image-list", nil, "block image list")
 	pflag.StringVar(&blockMessage, "block-message", "", "block message")
 	pflag.StringSliceVar(&privilegedIPList, "privileged-ip-list", nil, "privileged IP list")
+	pflag.BoolVar(&privilegedNoAuth, "privileged-no-auth", false, "privileged no auth")
 	pflag.IntVar(&retry, "retry", 0, "retry times")
 	pflag.DurationVar(&retryInterval, "retry-interval", 0, "retry interval")
 	pflag.StringVar(&storageDriver, "storage-driver", "", "storage driver")
@@ -231,6 +233,10 @@ func main() {
 
 	if len(privilegedIPList) != 0 {
 		opts = append(opts, crproxy.WithPrivilegedIPs(privilegedIPList))
+	}
+
+	if privilegedNoAuth {
+		opts = append(opts, crproxy.WithPrivilegedNoAuth(true))
 	}
 
 	if len(userpass) != 0 {

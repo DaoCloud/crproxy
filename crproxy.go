@@ -72,6 +72,7 @@ type CRProxy struct {
 	redirectLinks           *url.URL
 	limitDelay              bool
 	privilegedIPSet         map[string]struct{}
+	privilegedNoAuth        bool
 	disableTagsList         bool
 	simpleAuth              bool
 	tokenURL                string
@@ -109,6 +110,12 @@ func WithPrivilegedIPs(ips []string) Option {
 		for _, ip := range ips {
 			c.privilegedIPSet[ip] = struct{}{}
 		}
+	}
+}
+
+func WithPrivilegedNoAuth(b bool) Option {
+	return func(c *CRProxy) {
+		c.privilegedNoAuth = true
 	}
 }
 
