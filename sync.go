@@ -94,7 +94,6 @@ func (c *CRProxy) SyncImageLayer(ctx context.Context, image string, filter func(
 
 	host := reference.Domain(named)
 
-	host = c.getDomainAlias(host)
 	var name reference.Named
 
 	info := &ImageInfo{
@@ -115,6 +114,9 @@ func (c *CRProxy) SyncImageLayer(ctx context.Context, image string, filter func(
 			return errcode.ErrorCodeDenied
 		}
 	}
+
+	host = c.getDomainAlias(host)
+	info.Host = host
 
 	err = c.ping(host)
 	if err != nil {

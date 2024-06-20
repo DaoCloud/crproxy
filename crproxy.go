@@ -475,7 +475,6 @@ func (c *CRProxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		errcode.ServeJSON(rw, errcode.ErrorCodeDenied)
 		return
 	}
-	info.Host = c.getDomainAlias(info.Host)
 
 	if c.modify != nil {
 		n := c.modify(&ImageInfo{
@@ -497,6 +496,8 @@ func (c *CRProxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+
+	info.Host = c.getDomainAlias(info.Host)
 
 	if info.TagsList && c.disableTagsList {
 		emptyTagsList(rw, r)
