@@ -7,7 +7,7 @@ import (
 
 func TestParseOriginPathInfo(t *testing.T) {
 
-	var test_defaultRegistry string = "non_docker.io"
+	testDefaultRegistry := "non_docker.io"
 
 	type args struct {
 		path string
@@ -23,9 +23,9 @@ func TestParseOriginPathInfo(t *testing.T) {
 			args: args{
 				path: "/v2/busybox/manifests/1",
 			},
-			defaultRegistry: test_defaultRegistry,
+			defaultRegistry: testDefaultRegistry,
 			want: &PathInfo{
-				Host:      test_defaultRegistry,
+				Host:      testDefaultRegistry,
 				Image:     "busybox",
 				Manifests: "1",
 			},
@@ -35,9 +35,9 @@ func TestParseOriginPathInfo(t *testing.T) {
 			args: args{
 				path: "/v2/pytorch/pytorch/manifests/1",
 			},
-			defaultRegistry: test_defaultRegistry,
+			defaultRegistry: testDefaultRegistry,
 			want: &PathInfo{
-				Host:      test_defaultRegistry,
+				Host:      testDefaultRegistry,
 				Image:     "pytorch/pytorch",
 				Manifests: "1",
 			},
