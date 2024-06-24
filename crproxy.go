@@ -529,9 +529,14 @@ func (c *CRProxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if c.storageDriver != nil && info.Blobs != "" {
-		c.cacheBlobResponse(rw, r, info)
-		return
+	if c.storageDriver != nil {
+		if info.Blobs != "" {
+			c.cacheBlobResponse(rw, r, info)
+			return
+		} else if info.Manifests != "" {
+			c.cacheManifestResponse(rw, r, info)
+			return
+		}
 	}
 	c.directResponse(rw, r, info)
 }

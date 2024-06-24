@@ -141,7 +141,7 @@ func (c *CRProxy) SyncImageLayer(ctx context.Context, image string, filter func(
 	defer c.bytesPool.Put(buf)
 
 	uniq := map[digest.Digest]struct{}{}
-	cb0 := func(dgst digest.Digest, size int64, pf *manifestlist.PlatformSpec) error {
+	blobCallback := func(dgst digest.Digest, size int64, pf *manifestlist.PlatformSpec) error {
 		_, ok := uniq[dgst]
 		if ok {
 			if cb != nil {
@@ -255,14 +255,28 @@ func (c *CRProxy) SyncImageLayer(ctx context.Context, image string, filter func(
 		return nil
 	}
 
-	err = getLayerFromManifestList(ctx, ms, ref, filter, cb0)
+	manifestCallback := func(tagOrHash string, m distribution.Manifest) error {
+		_, playload, err := m.Payload()
+		if err != nil {
+			return err
+		}
+		return c.cacheManifestContent(ctx, &PathInfo{
+			Host:      info.Host,
+			Image:     info.Name,
+			Manifests: tagOrHash,
+		}, playload)
+	}
+
+	err = getLayerFromManifestList(ctx, ms, ref, filter, blobCallback, manifestCallback)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func getLayerFromManifestList(ctx context.Context, ms distribution.ManifestService, ref reference.Reference, filter func(pf manifestlist.PlatformSpec) bool, cb func(dgst digest.Digest, size int64, pf *manifestlist.PlatformSpec) error) error {
+func getLayerFromManifestList(ctx context.Context, ms distribution.ManifestService, ref reference.Reference, filter func(pf manifestlist.PlatformSpec) bool,
+	digestCallback func(dgst digest.Digest, size int64, pf *manifestlist.PlatformSpec) error,
+	manifestCallback func(tagOrHash string, m distribution.Manifest) error) error {
 	var (
 		m   distribution.Manifest
 		err error
@@ -273,8 +287,17 @@ func getLayerFromManifestList(ctx context.Context, ms distribution.ManifestServi
 		if err != nil {
 			return err
 		}
+		err = manifestCallback(r.Digest().String(), m)
+		if err != nil {
+			return err
+		}
 	case reference.Tagged:
+		tag := r.Tag()
 		m, err = ms.Get(ctx, "", distribution.WithTag(r.Tag()))
+		if err != nil {
+			return err
+		}
+		err = manifestCallback(tag, m)
 		if err != nil {
 			return err
 		}
@@ -293,8 +316,12 @@ func getLayerFromManifestList(ctx context.Context, ms distribution.ManifestServi
 			if err != nil {
 				return err
 			}
+			err = manifestCallback(mfest.Digest.String(), m0)
+			if err != nil {
+				return err
+			}
 			err = getLayerFromManifest(m0, func(dgst digest.Digest, size int64) error {
-				return cb(dgst, size, &mfest.Platform)
+				return digestCallback(dgst, size, &mfest.Platform)
 			})
 			if err != nil {
 				return err
@@ -303,7 +330,7 @@ func getLayerFromManifestList(ctx context.Context, ms distribution.ManifestServi
 		return nil
 	default:
 		return getLayerFromManifest(m, func(dgst digest.Digest, size int64) error {
-			return cb(dgst, size, nil)
+			return digestCallback(dgst, size, nil)
 		})
 	}
 }
