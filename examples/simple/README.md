@@ -24,6 +24,7 @@ services:
     - 80:8080
     - 443:8080
     command: |
+      --acme-cache-dir=/tmp/acme
       --acme-hosts=*
       --default-registry=docker.io
     tmpfs:
