@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"net"
 	"net/http"
 	"net/http/pprof"
 	"net/url"
@@ -27,6 +26,7 @@ import (
 	_ "github.com/distribution/distribution/v3/registry/storage/driver/s3-aws"
 
 	"github.com/daocloud/crproxy"
+	"github.com/daocloud/crproxy/internal/server"
 )
 
 var (
@@ -56,6 +56,11 @@ var (
 	overrideDefaultRegistry map[string]string
 	simpleAuth              bool
 	tokenURL                string
+
+	acmeHosts      []string
+	acmeCacheDir   string
+	certFile       string
+	privateKeyFile string
 )
 
 func init() {
@@ -85,6 +90,11 @@ func init() {
 	pflag.StringToStringVar(&overrideDefaultRegistry, "override-default-registry", nil, "override default registry")
 	pflag.BoolVar(&simpleAuth, "simple-auth", false, "enable simple auth")
 	pflag.StringVar(&tokenURL, "token-url", "", "token url")
+
+	pflag.StringSliceVar(&acmeHosts, "acme-hosts", nil, "acme hosts")
+	pflag.StringVar(&acmeCacheDir, "acme-cache-dir", "", "acme cache dir")
+	pflag.StringVar(&certFile, "cert-file", "", "cert file")
+	pflag.StringVar(&privateKeyFile, "private-key-file", "", "private key file")
 	pflag.Parse()
 }
 
@@ -324,15 +334,8 @@ func main() {
 	if behind {
 		handler = handlers.ProxyHeaders(handler)
 	}
-	server := http.Server{
-		BaseContext: func(listener net.Listener) context.Context {
-			return ctx
-		},
-		Handler: handler,
-		Addr:    address,
-	}
 
-	err = server.ListenAndServe()
+	err = server.Run(ctx, address, handler, acmeHosts, acmeCacheDir, certFile, privateKeyFile)
 	if err != nil {
 		logger.Println("failed to ListenAndServe:", err)
 		os.Exit(1)
