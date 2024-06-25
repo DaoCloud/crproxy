@@ -49,7 +49,7 @@ func (p PathInfo) Path() (string, error) {
 }
 
 func ParseOriginPathInfo(path string, defaultRegistry string) (*PathInfo, bool) {
-	path = strings.TrimLeft(path, prefix)
+	path = strings.TrimPrefix(path, prefix)
 	i := strings.IndexByte(path, '/')
 	if i <= 0 {
 		return nil, false

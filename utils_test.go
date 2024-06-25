@@ -45,6 +45,18 @@ func TestParseOriginPathInfo(t *testing.T) {
 		},
 		{
 			args: args{
+				path: "/v2/v2/manifests/latest",
+			},
+			defaultRegistry: testDefaultRegistry,
+			want: &PathInfo{
+				Host:      testDefaultRegistry,
+				Image:     "v2",
+				Manifests: "latest",
+			},
+			wantOk: true,
+		},
+		{
+			args: args{
 				path: "/v2/docker.io/busybox/manifests/1",
 			},
 			want: &PathInfo{
