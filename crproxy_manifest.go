@@ -87,7 +87,7 @@ func (c *CRProxy) cacheManifestContent(ctx context.Context, info *PathInfo, cont
 
 	if strings.HasPrefix(info.Manifests, "sha256:") {
 		if info.Manifests[7:] != hash {
-			return fmt.Errorf("expected hash %s is not same to %s, %s", info.Manifests[7:], hash)
+			return fmt.Errorf("expected hash %s is not same to %s", info.Manifests[7:], hash)
 		}
 	} else {
 		manifestLinkPath := manifestTagCachePath(info.Host, info.Image, info.Manifests)

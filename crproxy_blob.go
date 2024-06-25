@@ -139,7 +139,7 @@ func (c *CRProxy) cacheBlobContent(ctx context.Context, r *http.Request, blobPat
 		case http.StatusUnauthorized, http.StatusForbidden:
 			return 0, errcode.ErrorCodeDenied
 		}
-		return 0, errcode.ErrorCodeUnknown.WithMessage(fmt.Sprintf("Source response code %s", resp.StatusCode))
+		return 0, errcode.ErrorCodeUnknown.WithMessage(fmt.Sprintf("Source response code %d", resp.StatusCode))
 	}
 
 	buf := c.bytesPool.Get().([]byte)
