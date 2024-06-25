@@ -5,13 +5,13 @@
 ## 快速开始
 
 ### 前提
-- 准备一台访问网络畅通的服务器, 需要确保 80 和 443 端口打开
-- 准备一个域名（无需备案）并做好 DNS 解析：添加两条解析记录 `@` 记录 和 `*` 记录到准备好的服务器的 IP
+- 准备一台服务器, 需要确保 80 和 443 端口打开
+- 准备一个域名并做好 DNS 解析到准备好的服务器的 IP
 - 安装好 docker 和 docker-compose 参考：[菜鸟教程](https://www.runoob.com/docker/centos-docker-install.html)
 
 ### 启动
 
-在服务器里新建一个文件 docker-compose.yaml 内容如下
+在服务器里新建一个文件 `docker-compose.yaml` 内容如下
 
 ``` yaml
 version: '3'
@@ -28,9 +28,14 @@ services:
       --default-registry=docker.io
     tmpfs:
       - /tmp/acme
+    
+    # 非必须, 如果这台服务器无法畅通的达到你要的镜像仓库可以尝试配置 
+    environment:
+    - https_proxy=http://proxy:8080
+    - http_proxy=http://proxy:8080
 ```
 
-然后执行 docker-compose up -d 
+然后执行 `docker-compose up -d`
 
 
 ## 然后就能愉快的拉取镜像了
@@ -47,4 +52,8 @@ docker pull 你的域名/hello-world
     "https://你的域名"
   ]
 }
+```
+
+``` shell
+docker pull hello-world
 ```
