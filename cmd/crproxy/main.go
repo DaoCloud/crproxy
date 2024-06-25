@@ -30,31 +30,32 @@ import (
 )
 
 var (
-	behind                 bool
-	address                string
-	userpass               []string
-	disableKeepAlives      []string
-	limitDelay             bool
-	blobsSpeedLimit        string
-	ipsSpeedLimit          string
-	totalBlobsSpeedLimit   string
-	allowHostList          []string
-	allowImageListFromFile string
-	blockImageList         []string
-	blockMessage           string
-	privilegedIPList       []string
-	privilegedNoAuth       bool
-	retry                  int
-	retryInterval          time.Duration
-	storageDriver          string
-	storageParameters      map[string]string
-	linkExpires            time.Duration
-	redirectLinks          string
-	disableTagsList        bool
-	enablePprof            bool
-	defaultRegistry        string
-	simpleAuth             bool
-	tokenURL               string
+	behind                  bool
+	address                 string
+	userpass                []string
+	disableKeepAlives       []string
+	limitDelay              bool
+	blobsSpeedLimit         string
+	ipsSpeedLimit           string
+	totalBlobsSpeedLimit    string
+	allowHostList           []string
+	allowImageListFromFile  string
+	blockImageList          []string
+	blockMessage            string
+	privilegedIPList        []string
+	privilegedNoAuth        bool
+	retry                   int
+	retryInterval           time.Duration
+	storageDriver           string
+	storageParameters       map[string]string
+	linkExpires             time.Duration
+	redirectLinks           string
+	disableTagsList         bool
+	enablePprof             bool
+	defaultRegistry         string
+	overrideDefaultRegistry map[string]string
+	simpleAuth              bool
+	tokenURL                string
 )
 
 func init() {
@@ -81,6 +82,7 @@ func init() {
 	pflag.BoolVar(&disableTagsList, "disable-tags-list", false, "disable tags list")
 	pflag.BoolVar(&enablePprof, "enable-pprof", false, "Enable pprof")
 	pflag.StringVar(&defaultRegistry, "default-registry", "", "default registry used for non full-path docker pull, like:docker.io")
+	pflag.StringToStringVar(&overrideDefaultRegistry, "override-default-registry", nil, "override default registry")
 	pflag.BoolVar(&simpleAuth, "simple-auth", false, "enable simple auth")
 	pflag.StringVar(&tokenURL, "token-url", "", "token url")
 	pflag.Parse()
@@ -288,6 +290,10 @@ func main() {
 
 	if defaultRegistry != "" {
 		opts = append(opts, crproxy.WithDefaultRegistry(defaultRegistry))
+	}
+
+	if len(overrideDefaultRegistry) != 0 {
+		opts = append(opts, crproxy.WithOverrideDefaultRegistry(overrideDefaultRegistry))
 	}
 
 	if simpleAuth {

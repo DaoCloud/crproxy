@@ -74,7 +74,8 @@ type CRProxy struct {
 	tokenURL                string
 	matcher                 hostmatcher.Matcher
 
-	defaultRegistry string
+	defaultRegistry         string
+	overrideDefaultRegistry map[string]string
 }
 
 type Option func(c *CRProxy)
@@ -89,6 +90,12 @@ func WithSimpleAuth(b bool, tokenURL string) Option {
 func WithDefaultRegistry(target string) Option {
 	return func(c *CRProxy) {
 		c.defaultRegistry = target
+	}
+}
+
+func WithOverrideDefaultRegistry(overrideDefaultRegistry map[string]string) Option {
+	return func(c *CRProxy) {
+		c.overrideDefaultRegistry = overrideDefaultRegistry
 	}
 }
 
@@ -475,7 +482,14 @@ func (c *CRProxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	info, ok := ParseOriginPathInfo(oriPath, c.defaultRegistry)
+	defaultRegistry := c.defaultRegistry
+	if c.overrideDefaultRegistry != nil {
+		r, ok := c.overrideDefaultRegistry[r.Host]
+		if ok {
+			defaultRegistry = r
+		}
+	}
+	info, ok := ParseOriginPathInfo(oriPath, defaultRegistry)
 	if !ok {
 		errcode.ServeJSON(rw, errcode.ErrorCodeDenied)
 		return
