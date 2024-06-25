@@ -201,6 +201,8 @@ github.com/uber/jaeger-client-go v2.30.0+incompatible h1:D6wyKGCecFaSRUpo8lCVbaO
 github.com/uber/jaeger-client-go v2.30.0+incompatible/go.mod h1:WVhlPFC8FDjOFMMWRy2pZqQJSXxYSwNYOkTr/Z6d3Kk=
 github.com/uber/jaeger-lib v2.4.1+incompatible h1:td4jdvLcExb4cBISKIpHuGoVXh+dVKhn2Um6rjCsSsg=
 github.com/uber/jaeger-lib v2.4.1+incompatible/go.mod h1:ComeNDZlWwrWnDv8aPp0Ba6+uUTzImX/AauajbLI56U=
+github.com/wzshiming/cmux v0.3.3 h1:WlcKUwSN4vpClnHiyX9I4RtZ4xJeAqfrf4ltxSWuPoQ=
+github.com/wzshiming/cmux v0.3.3/go.mod h1:lPhqJN2E3frzkxrPdjesxL09z7nTcuZ6i8Is+2G/Xw4=
 github.com/wzshiming/geario v0.0.0-20220512063849-ddc203ba7487 h1:5YN2BY58L2/5N7olluOPqJmmybcio0+DFY6nwH5gc8c=
 github.com/wzshiming/geario v0.0.0-20220512063849-ddc203ba7487/go.mod h1:Fodw3HJvNUS+/MgqXCRp9iYLQfynAu/LKXGOWoX+D/Q=
 github.com/wzshiming/hostmatcher v0.0.3 h1:+JYAq6vUZXDEQ1Ipfdc/D7HmaIMngcc71ftonyCQVQk=
@@ -209,6 +211,8 @@ github.com/wzshiming/httpseek v0.1.0 h1:lEgL7EBELT/VV9UaTp+m3kw5Pe1KOUdY+IPnKkag
 github.com/wzshiming/httpseek v0.1.0/go.mod h1:YoZhlLIwNjTBDXIT8NpK5zRjOgZouRXPaBfjVXdqMMs=
 github.com/wzshiming/lru v0.1.0 h1:937SBBo9lDBRMivJqF46eVK2Q3omRWnN7hWpr2i3xZg=
 github.com/wzshiming/lru v0.1.0/go.mod h1:uaI2W/Gx3r1gHIc3FG38PKK1idvMXhgY8lToXaBsDIQ=
+github.com/wzshiming/trie v0.1.1 h1:02AaBSZGhs6Aqljp8fz4xq/Mg8omFBPIlrUS0pJ11ks=
+github.com/wzshiming/trie v0.1.1/go.mod h1:c9thxXTh4KcGkejt4sUsO4c5GUmWpxeWzOJ7AZJaI+8=
 github.com/yuin/goldmark v1.4.13/go.mod h1:6yULJ656Px+3vBD8DxQVa3kxgyrAnzto9xy5taEt/CY=
 go.opencensus.io v0.24.0 h1:y73uSU6J157QMP2kn2r30vwW1A2W2WFwSCGnAVxeaD0=
 go.opencensus.io v0.24.0/go.mod h1:vNK8G9p7aAivkbmorf4v+7Hgx+Zs0yY+0fOtgBfjQKo=
