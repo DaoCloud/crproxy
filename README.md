@@ -13,6 +13,14 @@ you can deploy your own image proxy server if you need to.
 
 [Refer to](https://github.com/wzshiming/crproxy/tree/master/examples/default)
 
+## crproxy + registry(pull through cache mode)
+
+- for organizations and companies which need to serve big clusters
+- [contaienr-image-mirror](https://blog.geekcity.tech/articles/kubernetes/argocd/container-image-mirror/)
+    * deploy into k8s with argocd
+    * storage with pvc, s3(minio/oss compatible)
+    * bind ssl with cert-manager and ingress
+
 ## On Docker
 
 Just add the prefix `m.daocloud.io/`
