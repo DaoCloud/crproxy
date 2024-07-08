@@ -29,15 +29,15 @@ services:
   #      - ./registry/config.yml:/etc/docker/registry/config.yml:ro
 
   crproxy:
-    image: ghcr.io/wzshiming/crproxy/crproxy:v0.1.0
+    image: ghcr.io/daocloud/crproxy/crproxy:v0.8.0
     container_name: crproxy
     restart: unless-stopped
   # command: |
-  #   # support >= 0.2.0  add docker.io username increase pulls from 100 to 200  per 6 hour period
+  #   # add docker.io username increase pulls from 100 to 200  per 6 hour period
   #   -u username:password@docker.io
-  #   # support >= v0.8.0   support docker pull yourdomain/mysql:8
+  #   # support ignoring prefixes, e.g. docker pull mysql
   #   --default-registry docker.io
-  #   # support >= 0.7.0-rc.10   storage example: aliyunoss
+  #   # cache storage example: aliyunoss
   #   --storage-driver oss
   #   --storage-parameters accesskeyid=xxxxx,accesskeysecret=xxxxxxx,region=oss-ap-xxxx-1,encrypt=true,bucket=xxxx
 
