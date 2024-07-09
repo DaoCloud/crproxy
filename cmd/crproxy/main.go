@@ -30,32 +30,33 @@ import (
 )
 
 var (
-	behind                  bool
-	address                 string
-	userpass                []string
-	disableKeepAlives       []string
-	limitDelay              bool
-	blobsSpeedLimit         string
-	ipsSpeedLimit           string
-	totalBlobsSpeedLimit    string
-	allowHostList           []string
-	allowImageListFromFile  string
-	blockImageList          []string
-	blockMessage            string
-	privilegedIPList        []string
-	privilegedNoAuth        bool
-	retry                   int
-	retryInterval           time.Duration
-	storageDriver           string
-	storageParameters       map[string]string
-	linkExpires             time.Duration
-	redirectLinks           string
-	disableTagsList         bool
-	enablePprof             bool
-	defaultRegistry         string
-	overrideDefaultRegistry map[string]string
-	simpleAuth              bool
-	tokenURL                string
+	behind                      bool
+	address                     string
+	userpass                    []string
+	disableKeepAlives           []string
+	limitDelay                  bool
+	blobsSpeedLimit             string
+	ipsSpeedLimit               string
+	totalBlobsSpeedLimit        string
+	allowHostList               []string
+	allowImageListFromFile      string
+	blockImageList              []string
+	blockMessage                string
+	privilegedIPList            []string
+	privilegedImageListFromFile string
+	privilegedNoAuth            bool
+	retry                       int
+	retryInterval               time.Duration
+	storageDriver               string
+	storageParameters           map[string]string
+	linkExpires                 time.Duration
+	redirectLinks               string
+	disableTagsList             bool
+	enablePprof                 bool
+	defaultRegistry             string
+	overrideDefaultRegistry     map[string]string
+	simpleAuth                  bool
+	tokenURL                    string
 
 	redirectOriginBlobLinks bool
 
@@ -79,7 +80,8 @@ func init() {
 	pflag.StringSliceVar(&blockImageList, "block-image-list", nil, "block image list")
 	pflag.StringVar(&blockMessage, "block-message", "", "block message")
 	pflag.StringSliceVar(&privilegedIPList, "privileged-ip-list", nil, "privileged IP list")
-	pflag.BoolVar(&privilegedNoAuth, "privileged-no-auth", false, "privileged no auth")
+	pflag.BoolVar(&privilegedNoAuth, "privileged-no-auth", false, "privileged no auth (deprecated)")
+	pflag.StringVar(&privilegedImageListFromFile, "privileged-image-list-from-file", "", "privileged image list from file")
 	pflag.IntVar(&retry, "retry", 0, "retry times")
 	pflag.DurationVar(&retryInterval, "retry-interval", 0, "retry interval")
 	pflag.StringVar(&storageDriver, "storage-driver", "", "storage driver")
@@ -253,15 +255,46 @@ func main() {
 		opts = append(opts, crproxy.WithBlockMessage(blockMessage))
 	}
 
-	if len(privilegedIPList) != 0 {
+	if len(privilegedIPList) != 0 || privilegedImageListFromFile != "" {
+		var matcher hostmatcher.Matcher
+		if privilegedImageListFromFile != "" {
+			f, err := os.ReadFile(privilegedImageListFromFile)
+			if err != nil {
+				logger.Println("can't read privileged list file %s", privilegedImageListFromFile)
+				os.Exit(1)
+			}
+
+			lines := bufio.NewReader(bytes.NewReader(f))
+			hosts := []string{}
+			for {
+				line, _, err := lines.ReadLine()
+				if err == io.EOF {
+					break
+				}
+				h := strings.TrimSpace(string(line))
+				if len(h) == 0 {
+					continue
+				}
+				hosts = append(hosts, h)
+			}
+			matcher = hostmatcher.NewMatcher(hosts)
+		}
+
 		set := map[string]struct{}{}
 		for _, ip := range privilegedIPList {
 			set[ip] = struct{}{}
 		}
-		opts = append(opts, crproxy.WithPrivilegedFunc(func(r *http.Request) bool {
-			ip := r.RemoteAddr
-			_, ok := set[ip]
-			return ok
+		opts = append(opts, crproxy.WithPrivilegedFunc(func(r *http.Request, info *crproxy.ImageInfo) bool {
+			if len(set) != 0 {
+				ip := r.RemoteAddr
+				if _, ok := set[ip]; ok {
+					return true
+				}
+			}
+			if matcher != nil && info != nil {
+				return matcher.Match(info.Host + "/" + info.Name)
+			}
+			return false
 		}))
 	}
 
@@ -329,7 +362,7 @@ func main() {
 	}
 
 	if redirectOriginBlobLinks {
-		opts = append(opts, crproxy.WithRedirectToOriginBlobFunc(func(r *http.Request) bool {
+		opts = append(opts, crproxy.WithRedirectToOriginBlobFunc(func(r *http.Request, info *crproxy.ImageInfo) bool {
 			return true
 		}))
 	}

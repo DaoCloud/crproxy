@@ -77,19 +77,19 @@ type CRProxy struct {
 	defaultRegistry         string
 	overrideDefaultRegistry map[string]string
 
-	privilegedFunc           func(r *http.Request) bool
-	redirectToOriginBlobFunc func(r *http.Request) bool
+	privilegedFunc           func(r *http.Request, info *ImageInfo) bool
+	redirectToOriginBlobFunc func(r *http.Request, info *ImageInfo) bool
 }
 
 type Option func(c *CRProxy)
 
-func WithPrivilegedFunc(f func(r *http.Request) bool) Option {
+func WithPrivilegedFunc(f func(r *http.Request, info *ImageInfo) bool) Option {
 	return func(c *CRProxy) {
 		c.privilegedFunc = f
 	}
 }
 
-func WithRedirectToOriginBlobFunc(f func(r *http.Request) bool) Option {
+func WithRedirectToOriginBlobFunc(f func(r *http.Request, info *ImageInfo) bool) Option {
 	return func(c *CRProxy) {
 		c.redirectToOriginBlobFunc = f
 	}
@@ -516,10 +516,12 @@ func (c *CRProxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		info.Image = n.Name
 	}
 
-	if c.blockFunc != nil && c.blockFunc(&ImageInfo{
+	imageInfo := &ImageInfo{
 		Host: info.Host,
 		Name: info.Image,
-	}) {
+	}
+
+	if c.blockFunc != nil && c.blockFunc(imageInfo) {
 		if c.blockMessage != "" {
 			errcode.ServeJSON(rw, errcode.ErrorCodeDenied.WithMessage(c.blockMessage))
 		} else {
@@ -549,12 +551,12 @@ func (c *CRProxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	r.URL.Scheme = c.getScheme(info.Host)
 	r.URL.Path = path
 
-	if info.Blobs != "" && c.isRedirectToOriginBlob(r) {
+	if info.Blobs != "" && c.isRedirectToOriginBlob(r, imageInfo) {
 		c.redirectBlobResponse(rw, r, info)
 		return
 	}
 
-	if !c.isPrivileged(r) {
+	if !c.isPrivileged(r, imageInfo) {
 		if !c.checkLimit(rw, r, info) {
 			return
 		}
@@ -613,7 +615,10 @@ func (c *CRProxy) directResponse(rw http.ResponseWriter, r *http.Request, info *
 		defer c.bytesPool.Put(buf)
 		var body io.Reader = resp.Body
 
-		if !c.isPrivileged(r) {
+		if !c.isPrivileged(r, &ImageInfo{
+			Host: info.Host,
+			Name: info.Image,
+		}) {
 			c.accumulativeLimit(r, info, resp.ContentLength)
 
 			if c.totalBlobsSpeedLimit != nil && info.Blobs != "" {

@@ -57,7 +57,10 @@ func (c *CRProxy) cacheBlobResponse(rw http.ResponseWriter, r *http.Request, inf
 			return
 		}
 
-		if !c.isPrivileged(r) {
+		if !c.isPrivileged(r, &ImageInfo{
+			Host: info.Host,
+			Name: info.Image,
+		}) {
 			c.accumulativeLimit(r, info, size)
 			if !c.waitForLimit(r, info, size) {
 				c.errorResponse(rw, r, nil)
@@ -106,7 +109,10 @@ func (c *CRProxy) cacheBlobResponse(rw http.ResponseWriter, r *http.Request, inf
 			return
 		}
 
-		if !c.isPrivileged(r) {
+		if !c.isPrivileged(r, &ImageInfo{
+			Host: info.Host,
+			Name: info.Image,
+		}) {
 			c.accumulativeLimit(r, info, signal.size)
 			if !c.waitForLimit(r, info, signal.size) {
 				c.errorResponse(rw, r, nil)
@@ -216,10 +222,10 @@ func (c *CRProxy) redirectBlobResponse(rw http.ResponseWriter, r *http.Request, 
 	}
 }
 
-func (c *CRProxy) isRedirectToOriginBlob(r *http.Request) bool {
+func (c *CRProxy) isRedirectToOriginBlob(r *http.Request, info *ImageInfo) bool {
 	if c.redirectToOriginBlobFunc == nil {
 		return false
 	}
 
-	return c.redirectToOriginBlobFunc(r)
+	return c.redirectToOriginBlobFunc(r, info)
 }

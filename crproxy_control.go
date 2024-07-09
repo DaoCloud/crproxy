@@ -9,11 +9,11 @@ import (
 	"github.com/wzshiming/geario"
 )
 
-func (c *CRProxy) isPrivileged(r *http.Request) bool {
+func (c *CRProxy) isPrivileged(r *http.Request, info *ImageInfo) bool {
 	if c.privilegedFunc == nil {
 		return false
 	}
-	return c.privilegedFunc(r)
+	return c.privilegedFunc(r, info)
 }
 
 func (c *CRProxy) checkLimit(rw http.ResponseWriter, r *http.Request, info *PathInfo) bool {
