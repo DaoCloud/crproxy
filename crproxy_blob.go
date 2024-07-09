@@ -57,7 +57,7 @@ func (c *CRProxy) cacheBlobResponse(rw http.ResponseWriter, r *http.Request, inf
 			return
 		}
 
-		if !c.isPrivileged(r.RemoteAddr) {
+		if !c.isPrivileged(r) {
 			c.accumulativeLimit(r, info, size)
 			if !c.waitForLimit(r, info, size) {
 				c.errorResponse(rw, r, nil)
@@ -106,7 +106,7 @@ func (c *CRProxy) cacheBlobResponse(rw http.ResponseWriter, r *http.Request, inf
 			return
 		}
 
-		if !c.isPrivileged(r.RemoteAddr) {
+		if !c.isPrivileged(r) {
 			c.accumulativeLimit(r, info, signal.size)
 			if !c.waitForLimit(r, info, signal.size) {
 				c.errorResponse(rw, r, nil)

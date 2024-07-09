@@ -61,7 +61,7 @@ func (c *CRProxy) authenticate(rw http.ResponseWriter, r *http.Request) {
 }
 
 func (c *CRProxy) authorization(rw http.ResponseWriter, r *http.Request) bool {
-	if c.privilegedNoAuth && c.isPrivileged(r.RemoteAddr) {
+	if c.privilegedNoAuth && c.isPrivileged(r) {
 		r.Header.Del("Authorization")
 		return true
 	}

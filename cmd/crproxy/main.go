@@ -244,7 +244,15 @@ func main() {
 	}
 
 	if len(privilegedIPList) != 0 {
-		opts = append(opts, crproxy.WithPrivilegedIPs(privilegedIPList))
+		set := map[string]struct{}{}
+		for _, ip := range privilegedIPList {
+			set[ip] = struct{}{}
+		}
+		opts = append(opts, crproxy.WithPrivilegedFunc(func(r *http.Request) bool {
+			ip := r.RemoteAddr
+			_, ok := set[ip]
+			return ok
+		}))
 	}
 
 	if privilegedNoAuth {

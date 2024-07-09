@@ -9,24 +9,20 @@ import (
 	"github.com/wzshiming/geario"
 )
 
-func (c *CRProxy) isPrivileged(a string) bool {
-	if c.privilegedIPSet == nil {
+func (c *CRProxy) isPrivileged(r *http.Request) bool {
+	if c.privilegedFunc == nil {
 		return false
 	}
-	address := addr(a)
-
-	_, ok := c.privilegedIPSet[address]
-	return ok
+	return c.privilegedFunc(r)
 }
 
 func (c *CRProxy) checkLimit(rw http.ResponseWriter, r *http.Request, info *PathInfo) bool {
 	if c.ipsSpeedLimit != nil && info.Blobs != "" {
-		address := addr(r.RemoteAddr)
-		bps, _ := c.speedLimitRecord.LoadOrStore(address, geario.NewBPSAver(c.ipsSpeedLimitDuration))
+		bps, _ := c.speedLimitRecord.LoadOrStore(r.RemoteAddr, geario.NewBPSAver(c.ipsSpeedLimitDuration))
 		aver := bps.Aver()
 		if aver > *c.ipsSpeedLimit {
 			if c.logger != nil {
-				c.logger.Println("exceed limit", address, aver, *c.ipsSpeedLimit)
+				c.logger.Println("exceed limit", r.RemoteAddr, aver, *c.ipsSpeedLimit)
 			}
 			if c.limitDelay {
 				for bps.Aver() > *c.ipsSpeedLimit {
@@ -76,7 +72,7 @@ func (c *CRProxy) waitForLimit(r *http.Request, info *PathInfo, size int64) bool
 
 func (c *CRProxy) accumulativeLimit(r *http.Request, info *PathInfo, size int64) {
 	if c.ipsSpeedLimit != nil && info.Blobs != "" {
-		bps, ok := c.speedLimitRecord.Load(addr(r.RemoteAddr))
+		bps, ok := c.speedLimitRecord.Load(r.RemoteAddr)
 		if ok {
 			bps.Add(geario.B(size))
 		}

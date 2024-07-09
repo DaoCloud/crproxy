@@ -5,14 +5,6 @@ import (
 	"strings"
 )
 
-func addr(str string) string {
-	i := strings.LastIndex(str, ":")
-	if i <= 0 {
-		return str
-	}
-	return str[:i]
-}
-
 func addPrefixToImageForPagination(oldLink string, host string) string {
 	linkAndRel := strings.SplitN(oldLink, ";", 2)
 	if len(linkAndRel) != 2 {

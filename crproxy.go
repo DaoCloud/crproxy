@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"net"
 
 	"github.com/daocloud/crproxy/internal/maps"
 	"github.com/distribution/distribution/v3/registry/api/errcode"
@@ -67,7 +68,6 @@ type CRProxy struct {
 	mutCache                sync.Map
 	redirectLinks           *url.URL
 	limitDelay              bool
-	privilegedIPSet         map[string]struct{}
 	privilegedNoAuth        bool
 	disableTagsList         bool
 	simpleAuth              bool
@@ -76,9 +76,17 @@ type CRProxy struct {
 
 	defaultRegistry         string
 	overrideDefaultRegistry map[string]string
+
+	privilegedFunc func(r *http.Request) bool
 }
 
 type Option func(c *CRProxy)
+
+func WithPrivilegedFunc(f func(r *http.Request) bool) Option {
+	return func(c *CRProxy) {
+		c.privilegedFunc = f
+	}
+}
 
 func WithSimpleAuth(b bool, tokenURL string) Option {
 	return func(c *CRProxy) {
@@ -102,17 +110,6 @@ func WithOverrideDefaultRegistry(overrideDefaultRegistry map[string]string) Opti
 func WithDisableTagsList(b bool) Option {
 	return func(c *CRProxy) {
 		c.disableTagsList = b
-	}
-}
-
-func WithPrivilegedIPs(ips []string) Option {
-	return func(c *CRProxy) {
-		if c.privilegedIPSet == nil {
-			c.privilegedIPSet = map[string]struct{}{}
-		}
-		for _, ip := range ips {
-			c.privilegedIPSet[ip] = struct{}{}
-		}
 	}
 }
 
@@ -458,11 +455,22 @@ func (c *CRProxy) doWithAuth(cli *http.Client, r *http.Request, host string) (*h
 	return resp, nil
 }
 
+func getIP(str string) string {
+	host, _, err := net.SplitHostPort(str)
+	if err == nil && host != "" {
+		return host
+	}
+	return str
+}
+
 func (c *CRProxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		errcode.ServeJSON(rw, errcode.ErrorCodeUnsupported)
 		return
 	}
+
+	r.RemoteAddr = getIP(r.RemoteAddr)
+
 	if c.simpleAuth && !c.authorization(rw, r) {
 		c.authenticate(rw, r)
 		return
@@ -537,7 +545,7 @@ func (c *CRProxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	r.URL.Scheme = c.getScheme(info.Host)
 	r.URL.Path = path
 
-	if !c.isPrivileged(r.RemoteAddr) {
+	if !c.isPrivileged(r) {
 		if !c.checkLimit(rw, r, info) {
 			return
 		}
@@ -596,7 +604,7 @@ func (c *CRProxy) directResponse(rw http.ResponseWriter, r *http.Request, info *
 		defer c.bytesPool.Put(buf)
 		var body io.Reader = resp.Body
 
-		if !c.isPrivileged(r.RemoteAddr) {
+		if !c.isPrivileged(r) {
 			c.accumulativeLimit(r, info, resp.ContentLength)
 
 			if c.totalBlobsSpeedLimit != nil && info.Blobs != "" {
