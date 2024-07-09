@@ -192,11 +192,18 @@ func (c *CRProxy) redirectBlobResponse(rw http.ResponseWriter, r *http.Request, 
 	}()
 
 	switch resp.StatusCode {
+	default:
+		if c.logger != nil {
+			c.logger.Println("failed to redirect blob", info.Host, info.Image, resp.StatusCode)
+		}
+		errcode.ServeJSON(rw, errcode.ErrorCodeUnavailable)
+		return
 	case http.StatusUnauthorized, http.StatusForbidden:
 		errcode.ServeJSON(rw, errcode.ErrorCodeDenied)
 		return
-	default:
-		errcode.ServeJSON(rw, errcode.ErrorCodeUnavailable)
+	case http.StatusTemporaryRedirect, http.StatusPermanentRedirect, http.StatusMovedPermanently, http.StatusFound:
+		location := resp.Header.Get("Location")
+		http.Redirect(rw, r, location, http.StatusFound)
 		return
 	case http.StatusOK:
 		v := GetCtxValue(r.Context())
