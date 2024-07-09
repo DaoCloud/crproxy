@@ -196,6 +196,9 @@ func (c *CRProxy) redirectBlobResponse(rw http.ResponseWriter, r *http.Request, 
 		errcode.ServeJSON(rw, errcode.ErrorCodeDenied)
 		return
 	default:
+		if c.logger != nil {
+			c.logger.Println("failed to redirect blob", info.Host, info.Image, resp.StatusCode)
+		}
 		errcode.ServeJSON(rw, errcode.ErrorCodeUnavailable)
 		return
 	case http.StatusOK:
