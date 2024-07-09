@@ -57,6 +57,8 @@ var (
 	simpleAuth              bool
 	tokenURL                string
 
+	redirectOriginBlobLinks bool
+
 	acmeHosts      []string
 	acmeCacheDir   string
 	certFile       string
@@ -90,6 +92,8 @@ func init() {
 	pflag.StringToStringVar(&overrideDefaultRegistry, "override-default-registry", nil, "override default registry")
 	pflag.BoolVar(&simpleAuth, "simple-auth", false, "enable simple auth")
 	pflag.StringVar(&tokenURL, "token-url", "", "token url")
+
+	pflag.BoolVar(&redirectOriginBlobLinks, "redirect-origin-blob-links", false, "redirect origin blob links")
 
 	pflag.StringSliceVar(&acmeHosts, "acme-hosts", nil, "acme hosts")
 	pflag.StringVar(&acmeCacheDir, "acme-cache-dir", "", "acme cache dir")
@@ -135,8 +139,14 @@ func main() {
 			for _, v := range via {
 				s = append(s, v.URL.String())
 			}
-			s = append(s, req.URL.String())
+
+			lastRedirect := req.URL.String()
+			s = append(s, lastRedirect)
 			logger.Println("redirect", s)
+
+			if v := crproxy.GetCtxValue(req.Context()); v != nil {
+				v.LastRedirect = lastRedirect
+			}
 			return nil
 		},
 	}
@@ -316,6 +326,12 @@ func main() {
 
 	if simpleAuth {
 		opts = append(opts, crproxy.WithSimpleAuth(true, tokenURL))
+	}
+
+	if redirectOriginBlobLinks {
+		opts = append(opts, crproxy.WithRedirectToOriginBlobFunc(func(r *http.Request) bool {
+			return true
+		}))
 	}
 
 	crp, err := crproxy.NewCRProxy(opts...)

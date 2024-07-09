@@ -77,7 +77,8 @@ type CRProxy struct {
 	defaultRegistry         string
 	overrideDefaultRegistry map[string]string
 
-	privilegedFunc func(r *http.Request) bool
+	privilegedFunc           func(r *http.Request) bool
+	redirectToOriginBlobFunc func(r *http.Request) bool
 }
 
 type Option func(c *CRProxy)
@@ -85,6 +86,12 @@ type Option func(c *CRProxy)
 func WithPrivilegedFunc(f func(r *http.Request) bool) Option {
 	return func(c *CRProxy) {
 		c.privilegedFunc = f
+	}
+}
+
+func WithRedirectToOriginBlobFunc(f func(r *http.Request) bool) Option {
+	return func(c *CRProxy) {
+		c.redirectToOriginBlobFunc = f
 	}
 }
 
@@ -374,9 +381,6 @@ func (c *CRProxy) ping(host string) error {
 		return nil
 	}
 
-	if c.logger != nil {
-		c.logger.Println("ping", host)
-	}
 	resp, err := c.baseClient.Get(ep)
 	if err != nil {
 		return err
@@ -544,6 +548,11 @@ func (c *CRProxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	r.URL.Host = info.Host
 	r.URL.Scheme = c.getScheme(info.Host)
 	r.URL.Path = path
+
+	if info.Blobs != "" && c.isRedirectToOriginBlob(r) {
+		c.redirectBlobResponse(rw, r, info)
+		return
+	}
 
 	if !c.isPrivileged(r) {
 		if !c.checkLimit(rw, r, info) {

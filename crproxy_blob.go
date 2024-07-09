@@ -174,3 +174,45 @@ func (c *CRProxy) cacheBlobContent(ctx context.Context, r *http.Request, blobPat
 	}
 	return n, nil
 }
+
+func (c *CRProxy) redirectBlobResponse(rw http.ResponseWriter, r *http.Request, info *PathInfo) () {
+	r = r.WithContext(withCtxValue(r.Context()))
+
+	cli := c.getClientset(info.Host, info.Image)
+	resp, err := c.doWithAuth(cli, r, info.Host)
+	if err != nil {
+		if c.logger != nil {
+			c.logger.Println("failed to request", info.Host, info.Image, err)
+		}
+		errcode.ServeJSON(rw, errcode.ErrorCodeUnknown)
+		return
+	}
+	defer func() {
+		resp.Body.Close()
+	}()
+
+	switch resp.StatusCode {
+	case http.StatusUnauthorized, http.StatusForbidden:
+		errcode.ServeJSON(rw, errcode.ErrorCodeDenied)
+		return
+	default:
+		errcode.ServeJSON(rw, errcode.ErrorCodeUnavailable)
+		return
+	case http.StatusOK:
+		v := GetCtxValue(r.Context())
+		if v != nil && v.LastRedirect != "" {
+			http.Redirect(rw, r, v.LastRedirect, http.StatusFound)
+			return
+		}
+		errcode.ServeJSON(rw, errcode.ErrorCodeUnavailable)
+		return
+	}
+}
+
+func (c *CRProxy) isRedirectToOriginBlob(r *http.Request) bool {
+	if c.redirectToOriginBlobFunc == nil {
+		return false
+	}
+
+	return c.redirectToOriginBlobFunc(r)
+}
