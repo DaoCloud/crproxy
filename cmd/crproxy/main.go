@@ -57,6 +57,7 @@ var (
 	overrideDefaultRegistry     map[string]string
 	simpleAuth                  bool
 	tokenURL                    string
+	tokenAuthForceTLS           bool
 
 	redirectOriginBlobLinks bool
 
@@ -94,6 +95,7 @@ func init() {
 	pflag.StringToStringVar(&overrideDefaultRegistry, "override-default-registry", nil, "override default registry")
 	pflag.BoolVar(&simpleAuth, "simple-auth", false, "enable simple auth")
 	pflag.StringVar(&tokenURL, "token-url", "", "token url")
+	pflag.BoolVar(&tokenAuthForceTLS, "token-auth-force-tls", false, "token auth force TLS")
 
 	pflag.BoolVar(&redirectOriginBlobLinks, "redirect-origin-blob-links", false, "redirect origin blob links")
 
@@ -358,7 +360,7 @@ func main() {
 	}
 
 	if simpleAuth {
-		opts = append(opts, crproxy.WithSimpleAuth(true, tokenURL))
+		opts = append(opts, crproxy.WithSimpleAuth(true, tokenURL, tokenAuthForceTLS))
 	}
 
 	if redirectOriginBlobLinks {

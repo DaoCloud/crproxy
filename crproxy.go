@@ -72,6 +72,7 @@ type CRProxy struct {
 	disableTagsList         bool
 	simpleAuth              bool
 	tokenURL                string
+	tokenAuthForceTLS       bool
 	matcher                 hostmatcher.Matcher
 
 	defaultRegistry         string
@@ -95,10 +96,11 @@ func WithRedirectToOriginBlobFunc(f func(r *http.Request, info *ImageInfo) bool)
 	}
 }
 
-func WithSimpleAuth(b bool, tokenURL string) Option {
+func WithSimpleAuth(b bool, tokenURL string, forceTLS bool) Option {
 	return func(c *CRProxy) {
 		c.simpleAuth = b
 		c.tokenURL = tokenURL
+		c.tokenAuthForceTLS = forceTLS
 	}
 }
 

@@ -50,7 +50,7 @@ func (c *CRProxy) authenticate(rw http.ResponseWriter, r *http.Request) {
 	tokenURL := c.tokenURL
 	if tokenURL == "" {
 		var scheme = "http"
-		if r.TLS != nil {
+		if c.tokenAuthForceTLS || r.TLS != nil {
 			scheme = "https"
 		}
 		tokenURL = scheme + "://" + r.Host + "/auth/token"
