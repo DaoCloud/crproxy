@@ -29,7 +29,7 @@ services:
   #      - ./registry/config.yml:/etc/docker/registry/config.yml:ro
 
   crproxy:
-    image: ghcr.io/daocloud/crproxy/crproxy:v0.8.0
+    image: ghcr.io/daocloud/crproxy/crproxy:v0.9.0
     container_name: crproxy
     restart: unless-stopped
   # command: |
@@ -40,6 +40,10 @@ services:
   #   # cache storage example: aliyunoss
   #   --storage-driver oss
   #   --storage-parameters accesskeyid=xxxxx,accesskeysecret=xxxxxxx,region=oss-ap-xxxx-1,encrypt=true,bucket=xxxx
+  #   # user
+  #   --simple-auth
+  #   --simple-auth-user user1=pass1
+  #   --simple-auth-user user2=pass2
 
   ## For crproxy via a proxy
 
