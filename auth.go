@@ -32,35 +32,37 @@ func (c *CRProxy) AuthToken(rw http.ResponseWriter, r *http.Request) {
 
 	if c.simpleAuthUserpassFunc != nil {
 		authorization := r.Header.Get("Authorization")
-		if authorization != "" {
-			auth := strings.SplitN(authorization, " ", 2)
-			if len(auth) != 2 {
+		if authorization == "" {
+			errcode.ServeJSON(rw, errcode.ErrorCodeUnauthorized)
+			return
+		}
+		auth := strings.SplitN(authorization, " ", 2)
+		if len(auth) != 2 {
+			errcode.ServeJSON(rw, errcode.ErrorCodeUnauthorized)
+			return
+		}
+		switch auth[0] {
+		case "Basic":
+			user, pass, ok := parseBasicAuth(auth[1])
+			if user == "" || pass == "" {
 				errcode.ServeJSON(rw, errcode.ErrorCodeUnauthorized)
 				return
 			}
-			switch auth[0] {
-			case "Basic":
-				user, pass, ok := parseBasicAuth(auth[1])
-				if user == "" || pass == "" {
-					errcode.ServeJSON(rw, errcode.ErrorCodeUnauthorized)
-					return
-				}
 
-				p := false
-				if ok {
-					p = c.simpleAuthUserpassFunc(r, url.UserPassword(user, pass))
-				} else {
-					p = c.simpleAuthUserpassFunc(r, url.User(user))
-				}
-				if !p {
-					errcode.ServeJSON(rw, errcode.ErrorCodeUnauthorized)
-					return
-				}
-			default:
-				// TODO: Support others authorization
+			p := false
+			if ok {
+				p = c.simpleAuthUserpassFunc(r, url.UserPassword(user, pass))
+			} else {
+				p = c.simpleAuthUserpassFunc(r, url.User(user))
+			}
+			if !p {
 				errcode.ServeJSON(rw, errcode.ErrorCodeUnauthorized)
 				return
 			}
+		default:
+			// TODO: Support others authorization
+			errcode.ServeJSON(rw, errcode.ErrorCodeUnauthorized)
+			return
 		}
 	}
 
