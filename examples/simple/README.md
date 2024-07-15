@@ -17,7 +17,7 @@
 version: '3'
 services:
   crproxy:
-    image: ghcr.io/daocloud/crproxy/crproxy:v0.9.0
+    image: ghcr.io/daocloud/crproxy/crproxy:v0.9.1
     container_name: crproxy
     restart: unless-stopped
     ports:
