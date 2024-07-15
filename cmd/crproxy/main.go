@@ -56,6 +56,7 @@ var (
 	defaultRegistry             string
 	overrideDefaultRegistry     map[string]string
 	simpleAuth                  bool
+	simpleAuthUserpass          map[string]string
 	tokenURL                    string
 	tokenAuthForceTLS           bool
 
@@ -94,6 +95,7 @@ func init() {
 	pflag.StringVar(&defaultRegistry, "default-registry", "", "default registry used for non full-path docker pull, like:docker.io")
 	pflag.StringToStringVar(&overrideDefaultRegistry, "override-default-registry", nil, "override default registry")
 	pflag.BoolVar(&simpleAuth, "simple-auth", false, "enable simple auth")
+	pflag.StringToStringVar(&simpleAuthUserpass, "simple-auth-user", nil, "simple auth user and password")
 	pflag.StringVar(&tokenURL, "token-url", "", "token url")
 	pflag.BoolVar(&tokenAuthForceTLS, "token-auth-force-tls", false, "token auth force TLS")
 
@@ -361,6 +363,23 @@ func main() {
 
 	if simpleAuth {
 		opts = append(opts, crproxy.WithSimpleAuth(true, tokenURL, tokenAuthForceTLS))
+	}
+	if len(simpleAuthUserpass) != 0 {
+
+		opts = append(opts, crproxy.WithSimpleAuthUserFunc(func(r *http.Request, userinfo *url.Userinfo) bool {
+			pass, ok := simpleAuthUserpass[userinfo.Username()]
+			if !ok {
+				return false
+			}
+			upass, ok := userinfo.Password()
+			if !ok {
+				return false
+			}
+			if upass != pass {
+				return false
+			}
+			return true
+		}))
 	}
 
 	if redirectOriginBlobLinks {

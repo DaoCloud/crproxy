@@ -71,6 +71,7 @@ type CRProxy struct {
 	privilegedNoAuth        bool
 	disableTagsList         bool
 	simpleAuth              bool
+	simpleAuthUserpassFunc  func(r *http.Request, userinfo *url.Userinfo) bool
 	tokenURL                string
 	tokenAuthForceTLS       bool
 	matcher                 hostmatcher.Matcher
@@ -101,6 +102,12 @@ func WithSimpleAuth(b bool, tokenURL string, forceTLS bool) Option {
 		c.simpleAuth = b
 		c.tokenURL = tokenURL
 		c.tokenAuthForceTLS = forceTLS
+	}
+}
+
+func WithSimpleAuthUserFunc(f func(r *http.Request, userinfo *url.Userinfo) bool) Option {
+	return func(c *CRProxy) {
+		c.simpleAuthUserpassFunc = f
 	}
 }
 

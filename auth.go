@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"net/url"
 
 	"github.com/distribution/distribution/v3/registry/api/errcode"
 )
@@ -28,6 +29,40 @@ func (c *CRProxy) AuthToken(rw http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
 	scope := query.Get("scope")
 	service := query.Get("service")
+
+	if c.simpleAuthUserpassFunc != nil {
+		authorization := r.Header.Get("Authorization")
+		if authorization != "" {
+			auth := strings.SplitN(authorization, " ", 2)
+			if len(auth) != 2 {
+				errcode.ServeJSON(rw, errcode.ErrorCodeUnauthorized)
+				return
+			}
+			switch auth[0] {
+			case "Basic":
+				user, pass, ok := parseBasicAuth(auth[1])
+				if user == "" || pass == "" {
+					errcode.ServeJSON(rw, errcode.ErrorCodeUnauthorized)
+					return
+				}
+
+				p := false
+				if ok {
+					p = c.simpleAuthUserpassFunc(r, url.UserPassword(user, pass))
+				} else {
+					p = c.simpleAuthUserpassFunc(r, url.User(user))
+				}
+				if !p {
+					errcode.ServeJSON(rw, errcode.ErrorCodeUnauthorized)
+					return
+				}
+			default:
+				// TODO: Support others authorization
+				errcode.ServeJSON(rw, errcode.ErrorCodeUnauthorized)
+				return
+			}
+		}
+	}
 
 	rw.Header().Set("Content-Type", "application/json")
 
@@ -160,4 +195,17 @@ func (p *tokenManager) Decode(code string) (t Token, b bool) {
 	}
 
 	return t, true
+}
+
+func parseBasicAuth(auth string) (username, password string, ok bool) {
+	c, err := base64.StdEncoding.DecodeString(auth)
+	if err != nil {
+		return "", "", false
+	}
+	cs := string(c)
+	username, password, ok = strings.Cut(cs, ":")
+	if !ok {
+		return "", "", false
+	}
+	return username, password, true
 }
