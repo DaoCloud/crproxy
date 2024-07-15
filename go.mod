@@ -1,19 +1,19 @@
 module github.com/daocloud/crproxy
 
-go 1.21
+go 1.22
 
 require (
 	github.com/denverdino/aliyungo v0.0.0-20230411124812-ab98a9173ace
 	github.com/distribution/distribution/v3 v3.0.0-20220907155224-78b9c98c5c31
-	github.com/gorilla/handlers v1.5.1
+	github.com/gorilla/handlers v1.5.2
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/spf13/pflag v1.0.3
 	github.com/wzshiming/cmux v0.3.3
-	github.com/wzshiming/geario v0.0.0-20220512063849-ddc203ba7487
+	github.com/wzshiming/geario v0.0.0-20240308093553-a996e3817533
 	github.com/wzshiming/hostmatcher v0.0.3
 	github.com/wzshiming/httpseek v0.1.0
 	github.com/wzshiming/lru v0.1.0
-	golang.org/x/crypto v0.24.0
+	golang.org/x/crypto v0.25.0
 )
 
 require (
@@ -56,12 +56,12 @@ require (
 	go.opencensus.io v0.24.0 // indirect
 	golang.org/x/net v0.26.0 // indirect
 	golang.org/x/oauth2 v0.11.0 // indirect
-	golang.org/x/sys v0.21.0 // indirect
+	golang.org/x/sys v0.22.0 // indirect
 	golang.org/x/text v0.16.0 // indirect
 	google.golang.org/api v0.126.0 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
 	google.golang.org/cloud v0.0.0-20151119220103-975617b05ea8 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20230822172742-b8732ec3820d // indirect
 	google.golang.org/grpc v1.59.0 // indirect
-	google.golang.org/protobuf v1.31.0 // indirect
+	google.golang.org/protobuf v1.33.0 // indirect
 )
