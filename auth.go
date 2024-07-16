@@ -10,9 +10,9 @@ import (
 	"hash"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
-	"net/url"
 
 	"github.com/distribution/distribution/v3/registry/api/errcode"
 )
@@ -32,36 +32,44 @@ func (c *CRProxy) AuthToken(rw http.ResponseWriter, r *http.Request) {
 
 	if c.simpleAuthUserpassFunc != nil {
 		authorization := r.Header.Get("Authorization")
-		if authorization == "" {
-			errcode.ServeJSON(rw, errcode.ErrorCodeUnauthorized)
-			return
-		}
 		auth := strings.SplitN(authorization, " ", 2)
 		if len(auth) != 2 {
-			errcode.ServeJSON(rw, errcode.ErrorCodeUnauthorized)
+			if c.logger != nil {
+				c.logger.Println("Login failed", auth)
+			}
+			errcode.ServeJSON(rw, errcode.ErrorCodeDenied)
 			return
 		}
 		switch auth[0] {
 		case "Basic":
 			user, pass, ok := parseBasicAuth(auth[1])
 			if user == "" || pass == "" {
-				errcode.ServeJSON(rw, errcode.ErrorCodeUnauthorized)
+				errcode.ServeJSON(rw, errcode.ErrorCodeDenied)
 				return
 			}
 
-			p := false
+			var u *url.Userinfo
 			if ok {
-				p = c.simpleAuthUserpassFunc(r, url.UserPassword(user, pass))
+				u = url.UserPassword(user, pass)
 			} else {
-				p = c.simpleAuthUserpassFunc(r, url.User(user))
+				u = url.User(user)
 			}
-			if !p {
-				errcode.ServeJSON(rw, errcode.ErrorCodeUnauthorized)
+			if !c.simpleAuthUserpassFunc(r, u) {
+				if c.logger != nil {
+					c.logger.Println("Login failed user and password", u)
+				}
+				errcode.ServeJSON(rw, errcode.ErrorCodeDenied)
 				return
 			}
+
+			if c.logger != nil {
+				c.logger.Println("Login succeed user", u.Username())
+			}
 		default:
-			// TODO: Support others authorization
-			errcode.ServeJSON(rw, errcode.ErrorCodeUnauthorized)
+			if c.logger != nil {
+				c.logger.Println("Unsupported authorization", authorization)
+			}
+			errcode.ServeJSON(rw, errcode.ErrorCodeDenied)
 			return
 		}
 	}
