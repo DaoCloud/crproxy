@@ -181,7 +181,7 @@ func (c *CRProxy) cacheBlobContent(ctx context.Context, r *http.Request, blobPat
 	return n, nil
 }
 
-func (c *CRProxy) redirectBlobResponse(rw http.ResponseWriter, r *http.Request, info *PathInfo) () {
+func (c *CRProxy) redirectBlobResponse(rw http.ResponseWriter, r *http.Request, info *PathInfo) {
 	r = r.WithContext(withCtxValue(r.Context()))
 
 	cli := c.getClientset(info.Host, info.Image)
