@@ -35,7 +35,7 @@ func (c *CRProxy) AuthToken(rw http.ResponseWriter, r *http.Request) {
 		auth := strings.SplitN(authorization, " ", 2)
 		if len(auth) != 2 {
 			if c.logger != nil {
-				c.logger.Println("Login failed", auth)
+				c.logger.Println("Login failed", authorization)
 			}
 			errcode.ServeJSON(rw, errcode.ErrorCodeDenied)
 			return
@@ -95,7 +95,7 @@ func (c *CRProxy) authenticate(rw http.ResponseWriter, r *http.Request) {
 	tokenURL := c.tokenURL
 	if tokenURL == "" {
 		var scheme = "http"
-		if c.tokenAuthForceTLS || r.TLS != nil {
+		if c.tokenAuthForceTLS || r.TLS != nil || r.URL.Scheme == "https" {
 			scheme = "https"
 		}
 		tokenURL = scheme + "://" + r.Host + "/auth/token"
