@@ -70,6 +70,8 @@ var (
 	privateKeyFile string
 
 	enableInternalAPI bool
+
+	readmeURL string
 )
 
 func init() {
@@ -110,6 +112,8 @@ func init() {
 	pflag.StringVar(&certFile, "cert-file", "", "cert file")
 	pflag.StringVar(&privateKeyFile, "private-key-file", "", "private key file")
 	pflag.BoolVar(&enableInternalAPI, "enable-internal-api", false, "enable internal api")
+
+	pflag.StringVar(&readmeURL, "readme-url", "", "redirect readme url when not found")
 	pflag.Parse()
 }
 
@@ -453,6 +457,11 @@ func main() {
 		mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
 		mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
 		mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+	}
+	if readmeURL != "" {
+		mux.HandleFunc("/", func(rw http.ResponseWriter, r *http.Request) {
+			http.Redirect(rw, r, readmeURL, http.StatusFound)
+		})
 	}
 
 	var handler http.Handler = mux
