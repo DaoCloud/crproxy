@@ -1,5 +1,7 @@
 # CRProxy (Container Registry Proxy)
 
+<img align="right" width="180px" src="./logo/crproxy.svg"/>
+
 CRProxy 是一个通用的 Image 代理
 
 在所有需要使用镜像的地方加上前缀 `m.daocloud.io/`

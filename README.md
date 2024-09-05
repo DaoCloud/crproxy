@@ -1,5 +1,7 @@
 # CRProxy (Container Registry Proxy)
 
+<img align="right" width="180px" src="./logo/crproxy.svg"/>
+
 CRProxy is a generic image proxy
 
 Add the prefix `m.daocloud.io/` to all places that need to use images
