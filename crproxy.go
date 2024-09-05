@@ -1,6 +1,7 @@
 package crproxy
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -81,6 +82,7 @@ type CRProxy struct {
 
 	privilegedFunc           func(r *http.Request, info *ImageInfo) bool
 	redirectToOriginBlobFunc func(r *http.Request, info *ImageInfo) bool
+	allowHeadMethod          bool
 }
 
 type Option func(c *CRProxy)
@@ -240,6 +242,12 @@ func WithRetry(retry int, retryInterval time.Duration) Option {
 	return func(c *CRProxy) {
 		c.retry = retry
 		c.retryInterval = retryInterval
+	}
+}
+
+func WithAllowHeadMethod(allowHeadMethod bool) Option {
+	return func(c *CRProxy) {
+		c.allowHeadMethod = allowHeadMethod
 	}
 }
 
@@ -419,25 +427,18 @@ func emptyTagsList(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, emptyTagsList)
 }
 
+var emptyBody = io.NopCloser(bytes.NewBuffer([]byte{}))
+
 func (c *CRProxy) do(cli *http.Client, r *http.Request) (*http.Response, error) {
-	resp, err := cli.Do(r)
-	if err == nil {
-		return resp, nil
+	if !c.allowHeadMethod && r.Method == http.MethodHead {
+		r.Method = http.MethodGet
+		defer func() {
+			r.Method = http.MethodHead
+			_ = r.Body.Close()
+			r.Body = emptyBody
+		}()
 	}
-
-	if r.Method != http.MethodHead {
-		return nil, err
-	}
-
-	r.Method = http.MethodGet
-	defer func() {
-		r.Method = http.MethodHead
-	}()
-	resp0, err0 := cli.Do(r)
-	if err0 != nil {
-		return nil, err
-	}
-	return resp0, nil
+	return cli.Do(r)
 }
 
 func (c *CRProxy) doWithAuth(cli *http.Client, r *http.Request, host string) (*http.Response, error) {
