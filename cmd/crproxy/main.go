@@ -72,6 +72,8 @@ var (
 	enableInternalAPI bool
 
 	readmeURL string
+
+	allowHeadMethod bool
 )
 
 func init() {
@@ -114,6 +116,7 @@ func init() {
 	pflag.BoolVar(&enableInternalAPI, "enable-internal-api", false, "enable internal api")
 
 	pflag.StringVar(&readmeURL, "readme-url", "", "redirect readme url when not found")
+	pflag.BoolVar(&allowHeadMethod, "allow-head-method", false, "allow head method")
 	pflag.Parse()
 }
 
@@ -438,6 +441,10 @@ func main() {
 		opts = append(opts, crproxy.WithRedirectToOriginBlobFunc(func(r *http.Request, info *crproxy.ImageInfo) bool {
 			return true
 		}))
+	}
+
+	if allowHeadMethod {
+		opts = append(opts, crproxy.WithAllowHeadMethod(allowHeadMethod))
 	}
 
 	crp, err := crproxy.NewCRProxy(opts...)
