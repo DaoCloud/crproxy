@@ -531,7 +531,7 @@ func (c *CRProxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		Name: info.Image,
 	}
 
-	if c.blockFunc != nil && c.blockFunc(imageInfo) {
+	if c.blockFunc != nil && !c.isPrivileged(r, nil) && c.blockFunc(imageInfo) {
 		if c.blockMessage != "" {
 			errcode.ServeJSON(rw, errcode.ErrorCodeDenied.WithMessage(c.blockMessage))
 		} else {
