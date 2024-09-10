@@ -87,7 +87,7 @@ func init() {
 	pflag.StringVar(&totalBlobsSpeedLimit, "total-blobs-speed-limit", "", "total blobs speed limit per second (default unlimited)")
 	pflag.StringSliceVar(&allowHostList, "allow-host-list", nil, "allow host list")
 	pflag.StringVar(&allowImageListFromFile, "allow-image-list-from-file", "", "allow image list from file")
-	pflag.StringSliceVar(&blockImageList, "block-image-list", nil, "block image list")
+	pflag.StringSliceVar(&blockImageList, "block-image-list", nil, "block image list (deprecated)")
 	pflag.StringVar(&blockMessage, "block-message", "", "block message")
 	pflag.StringSliceVar(&privilegedIPList, "privileged-ip-list", nil, "privileged IP list")
 	pflag.BoolVar(&privilegedNoAuth, "privileged-no-auth", false, "privileged no auth (deprecated)")
@@ -104,8 +104,8 @@ func init() {
 	pflag.StringToStringVar(&overrideDefaultRegistry, "override-default-registry", nil, "override default registry")
 	pflag.BoolVar(&simpleAuth, "simple-auth", false, "enable simple auth")
 	pflag.StringToStringVar(&simpleAuthUserpass, "simple-auth-user", nil, "simple auth user and password")
-	pflag.StringVar(&tokenURL, "token-url", "", "token url")
-	pflag.BoolVar(&tokenAuthForceTLS, "token-auth-force-tls", false, "token auth force TLS")
+	pflag.StringVar(&tokenURL, "token-url", "", "token url (deprecated)")
+	pflag.BoolVar(&tokenAuthForceTLS, "token-auth-force-tls", false, "token auth force TLS (deprecated)")
 
 	pflag.BoolVar(&redirectOriginBlobLinks, "redirect-origin-blob-links", false, "redirect origin blob links")
 
