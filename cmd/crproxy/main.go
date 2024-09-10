@@ -74,6 +74,8 @@ var (
 	readmeURL string
 
 	allowHeadMethod bool
+
+	manifestCacheDuration time.Duration
 )
 
 func init() {
@@ -117,6 +119,8 @@ func init() {
 
 	pflag.StringVar(&readmeURL, "readme-url", "", "redirect readme url when not found")
 	pflag.BoolVar(&allowHeadMethod, "allow-head-method", false, "allow head method")
+
+	pflag.DurationVar(&manifestCacheDuration, "manifest-cache-duration", 0, "manifest cache duration")
 	pflag.Parse()
 }
 
@@ -445,6 +449,10 @@ func main() {
 
 	if allowHeadMethod {
 		opts = append(opts, crproxy.WithAllowHeadMethod(allowHeadMethod))
+	}
+
+	if manifestCacheDuration != 0 {
+		opts = append(opts, crproxy.WithManifestCacheDuration(manifestCacheDuration))
 	}
 
 	crp, err := crproxy.NewCRProxy(opts...)

@@ -83,9 +83,18 @@ type CRProxy struct {
 	privilegedFunc           func(r *http.Request, info *ImageInfo) bool
 	redirectToOriginBlobFunc func(r *http.Request, info *ImageInfo) bool
 	allowHeadMethod          bool
+
+	manifestCache         maps.SyncMap[string, time.Time]
+	manifestCacheDuration time.Duration
 }
 
 type Option func(c *CRProxy)
+
+func WithManifestCacheDuration(d time.Duration) Option {
+	return func(c *CRProxy) {
+		c.manifestCacheDuration = d
+	}
+}
 
 func WithPrivilegedFunc(f func(r *http.Request, info *ImageInfo) bool) Option {
 	return func(c *CRProxy) {

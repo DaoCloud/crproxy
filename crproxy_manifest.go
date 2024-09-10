@@ -12,6 +12,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/distribution/distribution/v3/registry/api/errcode"
 )
@@ -25,10 +26,14 @@ func manifestTagCachePath(host, image, tagOrBlob string) string {
 }
 
 func (c *CRProxy) cacheManifestResponse(rw http.ResponseWriter, r *http.Request, info *PathInfo) {
+	if c.cachedManifest(rw, r, info, true) {
+		return
+	}
+
 	cli := c.getClientset(info.Host, info.Image)
 	resp, err := c.doWithAuth(cli, r, info.Host)
 	if err != nil {
-		if c.cachedManifest(rw, r, info) {
+		if c.cachedManifest(rw, r, info, false) {
 			return
 		}
 		if c.logger != nil {
@@ -43,7 +48,7 @@ func (c *CRProxy) cacheManifestResponse(rw http.ResponseWriter, r *http.Request,
 
 	switch resp.StatusCode {
 	case http.StatusUnauthorized, http.StatusForbidden:
-		if c.cachedManifest(rw, r, info) {
+		if c.cachedManifest(rw, r, info, false) {
 			return
 		}
 		errcode.ServeJSON(rw, errcode.ErrorCodeDenied)
@@ -51,7 +56,7 @@ func (c *CRProxy) cacheManifestResponse(rw http.ResponseWriter, r *http.Request,
 	}
 
 	if resp.StatusCode >= http.StatusInternalServerError {
-		if c.cachedManifest(rw, r, info) {
+		if c.cachedManifest(rw, r, info, false) {
 			return
 		}
 	}
@@ -112,16 +117,34 @@ func (c *CRProxy) cacheManifestContent(ctx context.Context, info *PathInfo, cont
 		return err
 	}
 
+	if c.manifestCacheDuration > 0 {
+		c.manifestCache.Store(manifestLinkPath, time.Now())
+	}
 	return nil
 }
 
-func (c *CRProxy) cachedManifest(rw http.ResponseWriter, r *http.Request, info *PathInfo) bool {
+func (c *CRProxy) cachedManifest(rw http.ResponseWriter, r *http.Request, info *PathInfo, try bool) bool {
+	if try && c.manifestCacheDuration == 0 {
+		return false
+	}
+
 	ctx := r.Context()
 	var manifestLinkPath string
 	if strings.HasPrefix(info.Manifests, "sha256:") {
 		manifestLinkPath = manifestRevisionsCachePath(info.Host, info.Image, info.Manifests[7:])
 	} else {
 		manifestLinkPath = manifestTagCachePath(info.Host, info.Image, info.Manifests)
+	}
+
+	if try {
+		last, ok := c.manifestCache.Load(manifestLinkPath)
+		if !ok {
+			return false
+		}
+
+		if time.Since(last) > c.manifestCacheDuration {
+			return false
+		}
 	}
 
 	content, err := c.storageDriver.GetContent(ctx, manifestLinkPath)
