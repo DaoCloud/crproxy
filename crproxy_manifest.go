@@ -43,6 +43,9 @@ func (c *CRProxy) cacheManifestResponse(rw http.ResponseWriter, r *http.Request,
 
 	switch resp.StatusCode {
 	case http.StatusUnauthorized, http.StatusForbidden:
+		if c.cachedManifest(rw, r, info) {
+			return
+		}
 		errcode.ServeJSON(rw, errcode.ErrorCodeDenied)
 		return
 	}
