@@ -542,7 +542,7 @@ func (c *CRProxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 
 	info.Host = c.getDomainAlias(info.Host)
 
-	if info.TagsList && c.disableTagsList {
+	if info.TagsList && !c.isPrivileged(r, nil) && c.disableTagsList {
 		emptyTagsList(rw, r)
 		return
 	}
