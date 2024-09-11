@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httputil"
 	"net/textproto"
 	"net/url"
 	"strings"
@@ -538,6 +539,11 @@ func (c *CRProxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	imageInfo := &ImageInfo{
 		Host: info.Host,
 		Name: info.Image,
+	}
+
+	if c.logger != nil {
+		req, err := httputil.DumpRequest(r, false)
+		c.logger.Println("REQUEST", string(req), err)
 	}
 
 	if c.blockFunc != nil && !c.isPrivileged(r, nil) && c.blockFunc(imageInfo) {
