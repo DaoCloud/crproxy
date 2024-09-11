@@ -2,6 +2,8 @@ package crproxy
 
 import (
 	"fmt"
+	"io"
+	"net/http"
 	"strings"
 )
 
@@ -157,4 +159,9 @@ func isDomainName(s string) bool {
 	}
 
 	return nonNumeric
+}
+
+func dumpResponse(resp *http.Response) string {
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 100))
+	return fmt.Sprintf("%d %d %q", resp.StatusCode, resp.ContentLength, string(body))
 }
