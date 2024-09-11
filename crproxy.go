@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/textproto"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -677,7 +678,19 @@ func (c *CRProxy) notFoundResponse(rw http.ResponseWriter, r *http.Request) {
 	http.NotFound(rw, r)
 }
 
-func (c *CRProxy) redirect(rw http.ResponseWriter, r *http.Request, blobPath string) error {
+func (c *CRProxy) redirectBlob(rw http.ResponseWriter, r *http.Request, blobPath string) error {
+	if r.Method == http.MethodHead {
+		file, err := c.storageDriver.Stat(r.Context(), blobPath)
+		if err != nil {
+			return err
+		}
+
+		rw.Header().Set("Content-Length", strconv.FormatInt(file.Size(), 10))
+		rw.Header().Set("Last-Modified", file.ModTime().UTC().Format(http.TimeFormat))
+		rw.WriteHeader(http.StatusOK)
+		return nil
+	}
+
 	options := map[string]interface{}{
 		"method": r.Method,
 	}

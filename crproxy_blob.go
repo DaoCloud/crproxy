@@ -68,7 +68,7 @@ func (c *CRProxy) cacheBlobResponse(rw http.ResponseWriter, r *http.Request, inf
 			}
 		}
 
-		err = c.redirect(rw, r, blobPath)
+		err = c.redirectBlob(rw, r, blobPath)
 		if err == nil {
 			return
 		}
@@ -120,7 +120,7 @@ func (c *CRProxy) cacheBlobResponse(rw http.ResponseWriter, r *http.Request, inf
 			}
 		}
 
-		err = c.redirect(rw, r, blobPath)
+		err = c.redirectBlob(rw, r, blobPath)
 		if err != nil {
 			if c.logger != nil {
 				c.logger.Println("failed to redirect", blobPath, err)
