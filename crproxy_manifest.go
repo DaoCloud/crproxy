@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/daocloud/crproxy/token"
 	"github.com/docker/distribution/registry/api/errcode"
 )
 
@@ -25,7 +26,7 @@ func manifestTagCachePath(host, image, tagOrBlob string) string {
 	return path.Join("/docker/registry/v2/repositories", host, image, "_manifests/tags", tagOrBlob, "current/link")
 }
 
-func (c *CRProxy) cacheManifestResponse(rw http.ResponseWriter, r *http.Request, info *PathInfo) {
+func (c *CRProxy) cacheManifestResponse(rw http.ResponseWriter, r *http.Request, info *PathInfo, t *token.Token) {
 	if c.cachedManifest(rw, r, info, true) {
 		return
 	}

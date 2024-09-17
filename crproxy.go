@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"github.com/daocloud/crproxy/internal/maps"
+	"github.com/daocloud/crproxy/logger"
+	"github.com/daocloud/crproxy/token"
 	"github.com/docker/distribution/registry/api/errcode"
 	"github.com/docker/distribution/registry/client/auth"
 	"github.com/docker/distribution/registry/client/auth/challenge"
@@ -29,10 +31,6 @@ var (
 	prefix  = "/v2/"
 	catalog = prefix + "_catalog"
 )
-
-type Logger interface {
-	Println(v ...interface{})
-}
 
 type ImageInfo struct {
 	Host string
@@ -52,7 +50,7 @@ type CRProxy struct {
 	basicCredentials        *basicCredentials
 	mutClientset            sync.Mutex
 	bytesPool               sync.Pool
-	logger                  Logger
+	logger                  logger.Logger
 	totalBlobsSpeedLimit    *geario.Gear
 	speedLimitRecord        maps.SyncMap[string, *geario.BPS]
 	blobsSpeedLimit         *geario.B
@@ -71,9 +69,6 @@ type CRProxy struct {
 	privilegedNoAuth        bool
 	disableTagsList         bool
 	simpleAuth              bool
-	simpleAuthUserpassFunc  func(r *http.Request, userinfo *url.Userinfo) bool
-	tokenURL                string
-	tokenAuthForceTLS       bool
 	matcher                 hostmatcher.Matcher
 
 	defaultRegistry         string
@@ -85,6 +80,8 @@ type CRProxy struct {
 
 	manifestCache         maps.SyncMap[string, time.Time]
 	manifestCacheDuration time.Duration
+
+	authenticator *token.Authenticator
 }
 
 type Option func(c *CRProxy)
@@ -107,17 +104,9 @@ func WithRedirectToOriginBlobFunc(f func(r *http.Request, info *ImageInfo) bool)
 	}
 }
 
-func WithSimpleAuth(b bool, tokenURL string, forceTLS bool) Option {
+func WithSimpleAuth(b bool) Option {
 	return func(c *CRProxy) {
 		c.simpleAuth = b
-		c.tokenURL = tokenURL
-		c.tokenAuthForceTLS = forceTLS
-	}
-}
-
-func WithSimpleAuthUserFunc(f func(r *http.Request, userinfo *url.Userinfo) bool) Option {
-	return func(c *CRProxy) {
-		c.simpleAuthUserpassFunc = f
 	}
 }
 
@@ -195,7 +184,7 @@ func WithBaseClient(baseClient *http.Client) Option {
 	}
 }
 
-func WithLogger(logger Logger) Option {
+func WithLogger(logger logger.Logger) Option {
 	return func(c *CRProxy) {
 		c.logger = logger
 	}
@@ -259,6 +248,12 @@ func WithAllowHeadMethod(allowHeadMethod bool) Option {
 	}
 }
 
+func WithAuthenticator(authenticator *token.Authenticator) Option {
+	return func(c *CRProxy) {
+		c.authenticator = authenticator
+	}
+}
+
 func NewCRProxy(opts ...Option) (*CRProxy, error) {
 	c := &CRProxy{
 		challengeManager: challenge.NewSimpleManager(),
@@ -270,6 +265,7 @@ func NewCRProxy(opts ...Option) (*CRProxy, error) {
 			},
 		},
 	}
+
 	for _, opt := range opts {
 		opt(c)
 	}
@@ -279,6 +275,12 @@ func NewCRProxy(opts ...Option) (*CRProxy, error) {
 			return nil, err
 		}
 		c.basicCredentials = bc
+	}
+
+	if c.simpleAuth {
+		if c.authenticator == nil {
+			return nil, fmt.Errorf("no authenticator provided")
+		}
 	}
 	return c, nil
 }
@@ -489,25 +491,38 @@ func (c *CRProxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		errcode.ServeJSON(rw, errcode.ErrorCodeUnsupported)
 		return
 	}
-
-	r.RemoteAddr = getIP(r.RemoteAddr)
-
-	if c.simpleAuth && !c.authorization(rw, r) {
-		c.authenticate(rw, r)
+	oriPath := r.URL.Path
+	if oriPath == catalog {
+		errcode.ServeJSON(rw, errcode.ErrorCodeUnsupported)
 		return
 	}
 
-	oriPath := r.URL.Path
+	r.RemoteAddr = getIP(r.RemoteAddr)
+	var t *token.Token
+	if c.simpleAuth {
+		gt, err := c.authenticator.Authorization(r)
+		if err != nil {
+			if c.logger != nil {
+				c.logger.Println("failed to authorize", r.RemoteAddr, err)
+			}
+			c.authenticator.Authenticate(rw, r)
+			return
+		}
+		t = &gt
+	} else {
+		t = &token.Token{}
+	}
+
 	if oriPath == prefix {
 		apiBase(rw, r)
 		return
 	}
-	if !strings.HasPrefix(oriPath, prefix) {
-		c.notFoundResponse(rw, r)
+	if c.simpleAuth && (t.Account == "" || t.Scope == "") {
+		c.authenticator.Authenticate(rw, r)
 		return
 	}
-	if oriPath == catalog {
-		errcode.ServeJSON(rw, errcode.ErrorCodeUnsupported)
+	if !strings.HasPrefix(oriPath, prefix) {
+		c.notFoundResponse(rw, r)
 		return
 	}
 
@@ -538,7 +553,18 @@ func (c *CRProxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		Name: info.Image,
 	}
 
-	if c.blockFunc != nil && !c.isPrivileged(r, nil) && c.blockFunc(imageInfo) {
+	if c.isPrivileged(r, imageInfo) {
+		t.NoRateLimit = true
+		t.NoAllowlist = true
+		t.AllowTagsList = true
+	}
+
+	if c.disableTagsList && info.TagsList && !t.AllowTagsList {
+		emptyTagsList(rw, r)
+		return
+	}
+
+	if c.blockFunc != nil && c.blockFunc(imageInfo) && !t.NoAllowlist {
 		if c.blockMessage != "" {
 			errcode.ServeJSON(rw, errcode.ErrorCodeDenied.WithMessage(c.blockMessage))
 		} else {
@@ -548,11 +574,6 @@ func (c *CRProxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	}
 
 	info.Host = c.getDomainAlias(info.Host)
-
-	if info.TagsList && !c.isPrivileged(r, nil) && c.disableTagsList {
-		emptyTagsList(rw, r)
-		return
-	}
 
 	path, err := info.Path()
 	if err != nil {
@@ -575,7 +596,7 @@ func (c *CRProxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !c.isPrivileged(r, imageInfo) {
+	if !t.NoRateLimit {
 		if !c.checkLimit(rw, r, info) {
 			return
 		}
@@ -583,17 +604,19 @@ func (c *CRProxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 
 	if c.storageDriver != nil {
 		if info.Blobs != "" {
-			c.cacheBlobResponse(rw, r, info)
+			c.cacheBlobResponse(rw, r, info, t)
 			return
-		} else if info.Manifests != "" {
-			c.cacheManifestResponse(rw, r, info)
+		}
+
+		if info.Manifests != "" {
+			c.cacheManifestResponse(rw, r, info, t)
 			return
 		}
 	}
-	c.directResponse(rw, r, info)
+	c.directResponse(rw, r, info, t)
 }
 
-func (c *CRProxy) directResponse(rw http.ResponseWriter, r *http.Request, info *PathInfo) {
+func (c *CRProxy) directResponse(rw http.ResponseWriter, r *http.Request, info *PathInfo, t *token.Token) {
 	cli := c.getClientset(info.Host, info.Image)
 	resp, err := c.doWithAuth(cli, r, info.Host)
 	if err != nil {
@@ -637,10 +660,7 @@ func (c *CRProxy) directResponse(rw http.ResponseWriter, r *http.Request, info *
 		defer c.bytesPool.Put(buf)
 		var body io.Reader = resp.Body
 
-		if !c.isPrivileged(r, &ImageInfo{
-			Host: info.Host,
-			Name: info.Image,
-		}) {
+		if !t.NoRateLimit {
 			c.accumulativeLimit(r, info, resp.ContentLength)
 
 			if c.totalBlobsSpeedLimit != nil && info.Blobs != "" {
