@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/daocloud/crproxy/token"
 	"github.com/docker/distribution/registry/api/errcode"
 )
 
@@ -19,7 +20,7 @@ func blobCachePath(blob string) string {
 	return path.Join("/docker/registry/v2/blobs/sha256", blob[:2], blob, "data")
 }
 
-func (c *CRProxy) cacheBlobResponse(rw http.ResponseWriter, r *http.Request, info *PathInfo) {
+func (c *CRProxy) cacheBlobResponse(rw http.ResponseWriter, r *http.Request, info *PathInfo, t *token.Token) {
 	ctx := r.Context()
 
 	blobPath := blobCachePath(info.Blobs)
@@ -57,10 +58,7 @@ func (c *CRProxy) cacheBlobResponse(rw http.ResponseWriter, r *http.Request, inf
 			return
 		}
 
-		if !c.isPrivileged(r, &ImageInfo{
-			Host: info.Host,
-			Name: info.Image,
-		}) {
+		if !t.NoRateLimit {
 			c.accumulativeLimit(r, info, size)
 			if !c.waitForLimit(r, info, size) {
 				c.errorResponse(rw, r, nil)
@@ -109,10 +107,7 @@ func (c *CRProxy) cacheBlobResponse(rw http.ResponseWriter, r *http.Request, inf
 			return
 		}
 
-		if !c.isPrivileged(r, &ImageInfo{
-			Host: info.Host,
-			Name: info.Image,
-		}) {
+		if !t.NoRateLimit {
 			c.accumulativeLimit(r, info, signal.size)
 			if !c.waitForLimit(r, info, signal.size) {
 				c.errorResponse(rw, r, nil)

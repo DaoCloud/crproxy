@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/rsa"
 	"encoding/csv"
 	"fmt"
 	"io"
@@ -31,7 +32,10 @@ import (
 	_ "github.com/docker/distribution/registry/storage/driver/s3-aws"
 
 	"github.com/daocloud/crproxy"
+	"github.com/daocloud/crproxy/internal/pki"
 	"github.com/daocloud/crproxy/internal/server"
+	"github.com/daocloud/crproxy/signing"
+	"github.com/daocloud/crproxy/token"
 )
 
 var (
@@ -63,8 +67,8 @@ var (
 	overrideDefaultRegistry     map[string]string
 	simpleAuth                  bool
 	simpleAuthUserpass          map[string]string
+	simpleAuthAllowAnonymous    bool
 	tokenURL                    string
-	tokenAuthForceTLS           bool
 
 	redirectOriginBlobLinks bool
 
@@ -80,6 +84,9 @@ var (
 	allowHeadMethod bool
 
 	manifestCacheDuration time.Duration
+
+	tokenPrivateKeyFile string
+	tokenPublicKeyFile  string
 )
 
 func init() {
@@ -111,8 +118,9 @@ func init() {
 	pflag.StringToStringVar(&overrideDefaultRegistry, "override-default-registry", nil, "override default registry")
 	pflag.BoolVar(&simpleAuth, "simple-auth", false, "enable simple auth")
 	pflag.StringToStringVar(&simpleAuthUserpass, "simple-auth-user", nil, "simple auth user and password")
-	pflag.StringVar(&tokenURL, "token-url", "", "token url (deprecated)")
-	pflag.BoolVar(&tokenAuthForceTLS, "token-auth-force-tls", false, "token auth force TLS (deprecated)")
+	pflag.BoolVar(&simpleAuthAllowAnonymous, "simple-auth-allow-anonymous", false, "simple auth allow anonymous")
+
+	pflag.StringVar(&tokenURL, "token-url", "", "token url")
 
 	pflag.BoolVar(&redirectOriginBlobLinks, "redirect-origin-blob-links", false, "redirect origin blob links")
 
@@ -126,6 +134,9 @@ func init() {
 	pflag.BoolVar(&allowHeadMethod, "allow-head-method", false, "allow head method")
 
 	pflag.DurationVar(&manifestCacheDuration, "manifest-cache-duration", 0, "manifest cache duration")
+
+	pflag.StringVar(&tokenPrivateKeyFile, "token-private-key-file", "", "private key file")
+	pflag.StringVar(&tokenPublicKeyFile, "token-public-key-file", "", "public key file")
 	pflag.Parse()
 }
 
@@ -459,25 +470,82 @@ func main() {
 		opts = append(opts, crproxy.WithOverrideDefaultRegistry(overrideDefaultRegistry))
 	}
 
-	if simpleAuth {
-		opts = append(opts, crproxy.WithSimpleAuth(true, tokenURL, tokenAuthForceTLS))
-	}
-	if len(simpleAuthUserpass) != 0 {
+	var auth func(r *http.Request, userinfo *url.Userinfo) (token.Attribute, bool)
 
-		opts = append(opts, crproxy.WithSimpleAuthUserFunc(func(r *http.Request, userinfo *url.Userinfo) bool {
+	if len(simpleAuthUserpass) != 0 {
+		auth = func(r *http.Request, userinfo *url.Userinfo) (token.Attribute, bool) {
+			if userinfo == nil {
+				return token.Attribute{}, simpleAuthAllowAnonymous
+			}
 			pass, ok := simpleAuthUserpass[userinfo.Username()]
 			if !ok {
-				return false
+				return token.Attribute{}, false
 			}
 			upass, ok := userinfo.Password()
 			if !ok {
-				return false
+				return token.Attribute{}, false
 			}
 			if upass != pass {
-				return false
+				return token.Attribute{}, false
 			}
-			return true
-		}))
+			return token.Attribute{
+				NoRateLimit:   true,
+				NoAllowlist:   true,
+				AllowTagsList: true,
+			}, true
+		}
+	}
+
+	if simpleAuth {
+		var privateKey *rsa.PrivateKey
+		var publicKey *rsa.PublicKey
+		if tokenPrivateKeyFile == "" && tokenPublicKeyFile == "" {
+			k, err := pki.GenerateKey()
+			if err != nil {
+				logger.Println("failed to GenerateKey:", err)
+				os.Exit(1)
+			}
+			privateKey = k
+			publicKey = &k.PublicKey
+		} else {
+			if tokenPrivateKeyFile != "" {
+				privateKeyData, err := os.ReadFile(tokenPrivateKeyFile)
+				if err != nil {
+					logger.Println("failed to ReadFile:", err)
+					os.Exit(1)
+				}
+				k, err := pki.DecodePrivateKey(privateKeyData)
+				if err != nil {
+					logger.Println("failed to DecodePrivateKey:", err)
+					os.Exit(1)
+				}
+				privateKey = k
+			}
+			if tokenPublicKeyFile != "" {
+				publicKeyData, err := os.ReadFile(tokenPublicKeyFile)
+				if err != nil {
+					logger.Println("failed to ReadFile:", err)
+					os.Exit(1)
+				}
+				k, err := pki.DecodePublicKey(publicKeyData)
+				if err != nil {
+					logger.Println("failed to DecodePublicKey:", err)
+					os.Exit(1)
+				}
+				publicKey = k
+			} else if privateKey != nil {
+				publicKey = &privateKey.PublicKey
+			}
+		}
+		opts = append(opts, crproxy.WithSimpleAuth(true))
+
+		authenticator := token.NewAuthenticator(token.NewDecoder(signing.NewVerifier(publicKey)), tokenURL)
+		opts = append(opts, crproxy.WithAuthenticator(authenticator))
+
+		if privateKey != nil {
+			gen := token.NewGenerator(token.NewEncoder(signing.NewSigner(privateKey)), auth, logger)
+			mux.Handle("/auth/token", gen)
+		}
 	}
 
 	if redirectOriginBlobLinks {
@@ -501,9 +569,10 @@ func main() {
 	}
 
 	mux.Handle("/v2/", crp)
-	mux.HandleFunc("/auth/token", crp.AuthToken)
 
-	mux.HandleFunc("/internal/api/image/sync", crp.Sync)
+	if enableInternalAPI {
+		mux.HandleFunc("/internal/api/image/sync", crp.Sync)
+	}
 
 	if enablePprof {
 		mux.HandleFunc("/debug/pprof/", pprof.Index)
