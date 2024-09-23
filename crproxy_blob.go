@@ -145,7 +145,7 @@ func (c *CRProxy) cacheBlobContent(ctx context.Context, r *http.Request, blobPat
 		return 0, errcode.ErrorCodeDenied
 	}
 
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		return 0, errcode.ErrorCodeUnknown.WithMessage(fmt.Sprintf("Source response code %d", resp.StatusCode))
 	}
 
