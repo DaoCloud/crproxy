@@ -9,20 +9,19 @@ require (
 	github.com/gorilla/handlers v1.5.2
 	github.com/huaweicloud/huaweicloud-sdk-go-obs v3.24.6+incompatible
 	github.com/opencontainers/go-digest v1.0.0
-	github.com/spf13/pflag v1.0.3
-	github.com/wzshiming/cmux v0.3.3
+	github.com/spf13/pflag v1.0.5
+	github.com/wzshiming/cmux v0.4.2
 	github.com/wzshiming/geario v0.0.0-20240308093553-a996e3817533
 	github.com/wzshiming/hostmatcher v0.0.3
 	github.com/wzshiming/httpseek v0.1.0
 	github.com/wzshiming/lru v0.1.0
-	golang.org/x/crypto v0.25.0
+	golang.org/x/crypto v0.28.0
 )
 
 replace github.com/docker/distribution => github.com/distribution/distribution v2.8.3+incompatible
 
 require (
-	cloud.google.com/go/compute v1.23.0 // indirect
-	cloud.google.com/go/compute/metadata v0.2.3 // indirect
+	cloud.google.com/go/compute/metadata v0.3.0 // indirect
 	github.com/Azure/azure-sdk-for-go v56.3.0+incompatible // indirect
 	github.com/Azure/go-autorest v14.2.0+incompatible // indirect
 	github.com/Azure/go-autorest/autorest v0.11.24 // indirect
@@ -58,12 +57,12 @@ require (
 	github.com/prometheus/procfs v0.11.1 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/stretchr/testify v1.8.4 // indirect
-	github.com/wzshiming/trie v0.1.1 // indirect
+	github.com/wzshiming/trie v0.3.1 // indirect
 	go.opencensus.io v0.24.0 // indirect
-	golang.org/x/net v0.26.0 // indirect
-	golang.org/x/oauth2 v0.11.0 // indirect
-	golang.org/x/sys v0.22.0 // indirect
-	golang.org/x/text v0.16.0 // indirect
+	golang.org/x/net v0.30.0 // indirect
+	golang.org/x/oauth2 v0.23.0 // indirect
+	golang.org/x/sys v0.26.0 // indirect
+	golang.org/x/text v0.19.0 // indirect
 	google.golang.org/api v0.126.0 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
 	google.golang.org/cloud v0.0.0-20151119220103-975617b05ea8 // indirect
