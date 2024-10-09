@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/distribution/distribution/v3/registry/api/errcode"
+	"github.com/docker/distribution/registry/api/errcode"
 )
 
 func blobCachePath(blob string) string {

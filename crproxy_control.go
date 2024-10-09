@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/distribution/distribution/v3/registry/api/errcode"
+	"github.com/docker/distribution/registry/api/errcode"
 	"github.com/wzshiming/geario"
 )
 

@@ -16,7 +16,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/distribution/distribution/v3/registry/storage/driver/factory"
+	"github.com/docker/distribution/registry/storage/driver/factory"
 	"github.com/gorilla/handlers"
 	"github.com/spf13/pflag"
 	"github.com/wzshiming/geario"
@@ -24,9 +24,9 @@ import (
 
 	_ "github.com/daocloud/crproxy/storage/driver/obs"
 	_ "github.com/daocloud/crproxy/storage/driver/oss"
-	_ "github.com/distribution/distribution/v3/registry/storage/driver/azure"
-	_ "github.com/distribution/distribution/v3/registry/storage/driver/gcs"
-	_ "github.com/distribution/distribution/v3/registry/storage/driver/s3-aws"
+	_ "github.com/docker/distribution/registry/storage/driver/azure"
+	_ "github.com/docker/distribution/registry/storage/driver/gcs"
+	_ "github.com/docker/distribution/registry/storage/driver/s3-aws"
 
 	"github.com/daocloud/crproxy"
 	"github.com/daocloud/crproxy/internal/server"

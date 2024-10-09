@@ -5,7 +5,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/distribution/distribution/v3/registry/client/auth/challenge"
+	"github.com/docker/distribution/registry/client/auth/challenge"
 )
 
 type Userpass struct {

@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/distribution/distribution/v3/registry/api/errcode"
+	"github.com/docker/distribution/registry/api/errcode"
 )
 
 func manifestRevisionsCachePath(host, image, tagOrBlob string) string {

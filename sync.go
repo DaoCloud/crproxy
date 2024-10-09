@@ -9,14 +9,14 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/distribution/distribution/v3"
-	"github.com/distribution/distribution/v3/manifest/manifestlist"
-	"github.com/distribution/distribution/v3/manifest/ocischema"
-	"github.com/distribution/distribution/v3/manifest/schema1"
-	"github.com/distribution/distribution/v3/manifest/schema2"
-	"github.com/distribution/distribution/v3/reference"
-	"github.com/distribution/distribution/v3/registry/api/errcode"
-	"github.com/distribution/distribution/v3/registry/client"
+	"github.com/distribution/reference"
+	"github.com/docker/distribution"
+	"github.com/docker/distribution/manifest/manifestlist"
+	"github.com/docker/distribution/manifest/ocischema"
+	"github.com/docker/distribution/manifest/schema1"
+	"github.com/docker/distribution/manifest/schema2"
+	"github.com/docker/distribution/registry/api/errcode"
+	"github.com/docker/distribution/registry/client"
 	"github.com/opencontainers/go-digest"
 )
 
