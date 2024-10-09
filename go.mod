@@ -6,6 +6,7 @@ require (
 	github.com/denverdino/aliyungo v0.0.0-20230411124812-ab98a9173ace
 	github.com/distribution/distribution/v3 v3.0.0-20220907155224-78b9c98c5c31
 	github.com/gorilla/handlers v1.5.2
+	github.com/huaweicloud/huaweicloud-sdk-go-obs v3.24.6+incompatible
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/spf13/pflag v1.0.3
 	github.com/wzshiming/cmux v0.3.3

@@ -22,6 +22,7 @@ import (
 	"github.com/wzshiming/geario"
 	"github.com/wzshiming/hostmatcher"
 
+	_ "github.com/daocloud/crproxy/storage/driver/obs"
 	_ "github.com/daocloud/crproxy/storage/driver/oss"
 	_ "github.com/distribution/distribution/v3/registry/storage/driver/azure"
 	_ "github.com/distribution/distribution/v3/registry/storage/driver/gcs"
