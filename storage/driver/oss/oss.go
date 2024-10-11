@@ -12,6 +12,7 @@ package oss
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -516,16 +517,12 @@ func (d *driver) ossPath(path string) string {
 }
 
 func parseError(path string, err error) error {
-	if ossErr, ok := err.(*oss.Error); ok && ossErr.StatusCode == http.StatusNotFound && (ossErr.Code == "NoSuchKey" || ossErr.Code == "") {
+	var ossErr *oss.Error
+	if errors.As(err, &ossErr) && ossErr.StatusCode == http.StatusNotFound && (ossErr.Code == "NoSuchKey" || ossErr.Code == "") {
 		return storagedriver.PathNotFoundError{Path: path}
 	}
 
 	return err
-}
-
-func hasCode(err error, code string) bool {
-	ossErr, ok := err.(*oss.Error)
-	return ok && ossErr.Code == code
 }
 
 func (d *driver) getOptions() oss.Options {

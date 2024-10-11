@@ -63,17 +63,12 @@ var OBSAcls = []obs.AclType{
 var validObjectACLs = map[obs.AclType]struct{}{}
 
 const (
-	driverName     = "obs"
-	dummyProjectID = "<unknown>"
+	driverName = "obs"
 
-	uploadSessionContentType           = "application/x-docker-upload-session"
 	minChunkSize                       = 5 << 20
 	maxChunkSize                       = 5 << 30
 	defaultChunkSize                   = 2 * minChunkSize
-	defaultMaxConcurrency              = 50
-	minConcurrency                     = 25
 	listMax                            = 1000
-	maxTries                           = 5
 	defaultMultipartCopyChunkSize      = 32 << 20
 	defaultMultipartCopyMaxConcurrency = 100
 	defaultMultipartCopyThresholdSize  = 32 << 20
@@ -212,8 +207,16 @@ func FromParameters(parameters map[string]interface{}) (*Driver, error) {
 	encryptBool := false
 	encrypt, ok := parameters["encrypt"]
 	if ok {
-		encryptBool, ok = encrypt.(bool)
-		if !ok {
+		switch b := encrypt.(type) {
+		case bool:
+			encryptBool = b
+		case string:
+			ib, err := strconv.ParseBool(b)
+			if err != nil {
+				return nil, err
+			}
+			encryptBool = ib
+		default:
 			return nil, fmt.Errorf("The encrypt parameter should be a boolean")
 		}
 	}
