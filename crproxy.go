@@ -571,7 +571,7 @@ func (c *CRProxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	r.URL.Path = path
 	r.URL.RawQuery = ""
 	r.URL.ForceQuery = false
-
+	r.Body = http.NoBody
 	if info.Blobs != "" && c.isRedirectToOriginBlob(r, imageInfo) {
 		c.redirectBlobResponse(rw, r, info)
 		return
