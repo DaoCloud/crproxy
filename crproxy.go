@@ -1,7 +1,6 @@
 package crproxy
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -436,18 +435,17 @@ func emptyTagsList(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, emptyTagsList)
 }
 
-var emptyBody = io.NopCloser(bytes.NewBuffer([]byte{}))
-
-func (c *CRProxy) do(cli *http.Client, r *http.Request) (*http.Response, error) {
+func (c *CRProxy) do(cli *http.Client, r *http.Request) (resp *http.Response, err error) {
 	if !c.allowHeadMethod && r.Method == http.MethodHead {
 		r.Method = http.MethodGet
 		defer func() {
 			r.Method = http.MethodHead
-			_ = r.Body.Close()
-			r.Body = emptyBody
+			resp.Body.Close()
+			resp.Body = http.NoBody
 		}()
 	}
-	return cli.Do(r)
+	resp, err = cli.Do(r)
+	return resp, err
 }
 
 func (c *CRProxy) doWithAuth(cli *http.Client, r *http.Request, host string) (*http.Response, error) {
