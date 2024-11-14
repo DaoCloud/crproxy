@@ -55,7 +55,7 @@ func (c *CRProxy) Sync(rw http.ResponseWriter, r *http.Request) {
 		if image == "" {
 			continue
 		}
-		err := c.SyncImageLayer(r.Context(), image, nil, func(sp SyncProgress) error {
+		err := c.SyncImageLayer(r.Context(), r.RemoteAddr, image, nil, func(sp SyncProgress) error {
 			err := encoder.Encode(sp)
 			if err != nil {
 				return err
@@ -81,7 +81,7 @@ type SyncProgress struct {
 	Platform *manifestlist.PlatformSpec `json:"platform,omitempty"`
 }
 
-func (c *CRProxy) SyncImageLayer(ctx context.Context, image string, filter func(pf manifestlist.PlatformSpec) bool, cb func(sp SyncProgress) error) error {
+func (c *CRProxy) SyncImageLayer(ctx context.Context, ip, image string, filter func(pf manifestlist.PlatformSpec) bool, cb func(sp SyncProgress) error) error {
 	ref, err := reference.Parse(image)
 	if err != nil {
 		return err
@@ -107,11 +107,18 @@ func (c *CRProxy) SyncImageLayer(ctx context.Context, image string, filter func(
 		name = newNameWithoutDomain(named, info.Name)
 	}
 
-	if c.blockFunc != nil && c.blockFunc(info) {
-		if c.blockMessage != "" {
-			return errcode.ErrorCodeDenied.WithMessage(c.blockMessage)
-		} else {
-			return errcode.ErrorCodeDenied
+	if c.blockFunc != nil {
+		blockMessage, block := c.block(&BlockInfo{
+			IP:   ip,
+			Host: info.Host,
+			Name: info.Name,
+		})
+		if block {
+			if blockMessage != "" {
+				return errcode.ErrorCodeDenied.WithMessage(blockMessage)
+			} else {
+				return errcode.ErrorCodeDenied
+			}
 		}
 	}
 

@@ -39,6 +39,12 @@ type ImageInfo struct {
 	Name string
 }
 
+type BlockInfo struct {
+	IP   string
+	Host string
+	Name string
+}
+
 type CRProxy struct {
 	baseClient              *http.Client
 	challengeManager        challenge.Manager
@@ -59,8 +65,7 @@ type CRProxy struct {
 	blobsSpeedLimitDuration time.Duration
 	ipsSpeedLimit           *geario.B
 	ipsSpeedLimitDuration   time.Duration
-	blockFunc               func(*ImageInfo) bool
-	blockMessage            string
+	blockFunc               []func(*BlockInfo) (string, bool)
 	retry                   int
 	retryInterval           time.Duration
 	storageDriver           storagedriver.StorageDriver
@@ -234,15 +239,9 @@ func WithDisableKeepAlives(disableKeepAlives []string) Option {
 	}
 }
 
-func WithBlockFunc(blockFunc func(info *ImageInfo) bool) Option {
+func WithBlockFunc(blockFunc func(info *BlockInfo) (string, bool)) Option {
 	return func(c *CRProxy) {
-		c.blockFunc = blockFunc
-	}
-}
-
-func WithBlockMessage(msg string) Option {
-	return func(c *CRProxy) {
-		c.blockMessage = msg
+		c.blockFunc = append(c.blockFunc, blockFunc)
 	}
 }
 
@@ -484,6 +483,16 @@ func getIP(str string) string {
 	return str
 }
 
+func (c *CRProxy) block(info *BlockInfo) (string, bool) {
+	for _, blockFunc := range c.blockFunc {
+		blockMessage, block := blockFunc(info)
+		if block {
+			return blockMessage, true
+		}
+	}
+	return "", false
+}
+
 func (c *CRProxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		errcode.ServeJSON(rw, errcode.ErrorCodeUnsupported)
@@ -538,13 +547,21 @@ func (c *CRProxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		Name: info.Image,
 	}
 
-	if c.blockFunc != nil && !c.isPrivileged(r, nil) && c.blockFunc(imageInfo) {
-		if c.blockMessage != "" {
-			errcode.ServeJSON(rw, errcode.ErrorCodeDenied.WithMessage(c.blockMessage))
-		} else {
-			errcode.ServeJSON(rw, errcode.ErrorCodeDenied)
+	if c.blockFunc != nil && !c.isPrivileged(r, nil) {
+
+		blockMessage, block := c.block(&BlockInfo{
+			IP:   r.RemoteAddr,
+			Host: info.Host,
+			Name: info.Image,
+		})
+		if block {
+			if blockMessage != "" {
+				errcode.ServeJSON(rw, errcode.ErrorCodeDenied.WithMessage(blockMessage))
+			} else {
+				errcode.ServeJSON(rw, errcode.ErrorCodeDenied)
+			}
+			return
 		}
-		return
 	}
 
 	info.Host = c.getDomainAlias(info.Host)

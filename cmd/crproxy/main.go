@@ -262,8 +262,11 @@ func main() {
 				matcher.Store(&m)
 			})
 		}
-		opts = append(opts, crproxy.WithBlockFunc(func(info *crproxy.ImageInfo) bool {
-			return !(*matcher.Load()).Match(info.Host + "/" + info.Name)
+		opts = append(opts, crproxy.WithBlockFunc(func(info *crproxy.BlockInfo) (string, bool) {
+			if (*matcher.Load()).Match(info.Host + "/" + info.Name) {
+				return "", false
+			}
+			return blockMessage, true
 		}))
 	} else if len(blockImageList) != 0 || len(allowHostList) != 0 {
 		allowHostMap := map[string]struct{}{}
@@ -274,11 +277,11 @@ func main() {
 		for _, image := range blockImageList {
 			blockImageMap[image] = struct{}{}
 		}
-		opts = append(opts, crproxy.WithBlockFunc(func(info *crproxy.ImageInfo) bool {
+		opts = append(opts, crproxy.WithBlockFunc(func(info *crproxy.BlockInfo) (string, bool) {
 			if len(allowHostMap) != 0 {
 				_, ok := allowHostMap[info.Host]
 				if !ok {
-					return true
+					return blockMessage, true
 				}
 			}
 
@@ -286,16 +289,12 @@ func main() {
 				image := info.Host + "/" + info.Name
 				_, ok := blockImageMap[image]
 				if ok {
-					return true
+					return blockMessage, true
 				}
 			}
 
-			return false
+			return "", false
 		}))
-	}
-
-	if blockMessage != "" {
-		opts = append(opts, crproxy.WithBlockMessage(blockMessage))
 	}
 
 	if len(privilegedIPList) != 0 || privilegedImageListFromFile != "" {
