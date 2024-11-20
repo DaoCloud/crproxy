@@ -222,14 +222,14 @@ func main() {
 	if allowImageListFromFile != "" {
 		f, err := os.ReadFile(allowImageListFromFile)
 		if err != nil {
-			logger.Println("can't read allow list file %s", allowImageListFromFile)
+			logger.Println("can't read allow list file", allowImageListFromFile, ":", err)
 			os.Exit(1)
 		}
 
 		var matcher atomic.Pointer[hostmatcher.Matcher]
 		m, err := getListFrom(bytes.NewReader(f))
 		if err != nil {
-			logger.Println("can't read allow list file %s", allowImageListFromFile)
+			logger.Println("can't read allow list file", allowImageListFromFile, ":", err)
 			os.Exit(1)
 		}
 		matcher.Store(&m)
@@ -245,7 +245,7 @@ func main() {
 				}
 				m, err := getListFrom(bytes.NewReader(body))
 				if err != nil {
-					logger.Println("can't read allow list file %s", allowImageListFromFile)
+					logger.Println("can't read allow list file", allowImageListFromFile, ":", err)
 					rw.WriteHeader(http.StatusBadRequest)
 					rw.Write([]byte(err.Error()))
 					return
@@ -302,13 +302,13 @@ func main() {
 		if privilegedImageListFromFile != "" {
 			f, err := os.ReadFile(privilegedImageListFromFile)
 			if err != nil {
-				logger.Println("can't read privileged list file %s", privilegedImageListFromFile)
+				logger.Println("can't read privileged list file", privilegedImageListFromFile, ":", err)
 				os.Exit(1)
 			}
 
 			m, err := getListFrom(bytes.NewReader(f))
 			if err != nil {
-				logger.Println("can't read privileged list file %s", privilegedImageListFromFile)
+				logger.Println("can't read privileged list file", privilegedImageListFromFile, ":", err)
 				os.Exit(1)
 			}
 			matcher.Store(&m)
@@ -324,7 +324,7 @@ func main() {
 					}
 					m, err := getListFrom(bytes.NewReader(body))
 					if err != nil {
-						logger.Println("can't read allow list file %s", privilegedImageListFromFile)
+						logger.Println("can't read allow list file", privilegedImageListFromFile, ":", err)
 						rw.WriteHeader(http.StatusBadRequest)
 						rw.Write([]byte(err.Error()))
 						return
@@ -368,7 +368,7 @@ func main() {
 	if len(userpass) != 0 {
 		bc, err := toUserAndPass(userpass)
 		if err != nil {
-			logger.Println("failed to toUserAndPass", err)
+			logger.Println("failed to toUserAndPass:", err)
 			os.Exit(1)
 		}
 		opts = append(opts, crproxy.WithUserAndPass(bc))
