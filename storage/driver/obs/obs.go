@@ -748,11 +748,23 @@ func (d *driver) URLFor(ctx context.Context, path string, options map[string]int
 			expiresIn = time.Until(et).Seconds()
 		}
 	}
+
+	var q map[string]string
+	referer, ok := options["referer"]
+	if ok {
+		refererString, ok := referer.(string)
+		if ok {
+			q = map[string]string{
+				"referer": refererString,
+			}
+		}
+	}
 	output, err := d.Client.CreateSignedUrl(&obs.CreateSignedUrlInput{
-		Bucket:  d.Bucket,
-		Key:     d.OBSPath(path),
-		Method:  obs.HttpMethodType(methodString),
-		Expires: int(expiresIn),
+		Bucket:      d.Bucket,
+		Key:         d.OBSPath(path),
+		Method:      obs.HttpMethodType(methodString),
+		Expires:     int(expiresIn),
+		QueryParams: q,
 	})
 	if err != nil {
 		return "", err

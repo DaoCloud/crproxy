@@ -692,13 +692,23 @@ func (c *CRProxy) notFoundResponse(rw http.ResponseWriter, r *http.Request) {
 	http.NotFound(rw, r)
 }
 
-func (c *CRProxy) redirect(rw http.ResponseWriter, r *http.Request, blobPath string) error {
+func (c *CRProxy) redirect(rw http.ResponseWriter, r *http.Request, blobPath string, info *PathInfo) error {
 	options := map[string]interface{}{
 		"method": r.Method,
 	}
 	linkExpires := c.linkExpires
 	if linkExpires > 0 {
 		options["expiry"] = time.Now().Add(linkExpires)
+	}
+
+	referer := r.RemoteAddr
+
+	if info != nil {
+		referer += fmt.Sprintf(":%s/%s", info.Host, info.Image)
+	}
+
+	if referer != "" {
+		options["referer"] = referer
 	}
 	u, err := c.storageDriver.URLFor(r.Context(), blobPath, options)
 	if err != nil {

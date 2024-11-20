@@ -17,6 +17,7 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+	"net/url"
 	"reflect"
 	"strconv"
 	"strings"
@@ -502,7 +503,19 @@ func (d *driver) URLFor(ctx context.Context, path string, options map[string]int
 			expiresTime = et
 		}
 	}
-	signedURL := d.Bucket.SignedURLWithMethod(methodString, d.ossPath(path), expiresTime, nil, nil)
+
+	var q url.Values
+	referer, ok := options["referer"]
+	if ok {
+		refererString, ok := referer.(string)
+		if ok {
+			q = url.Values{
+				"referer": []string{refererString},
+			}
+		}
+	}
+
+	signedURL := d.Bucket.SignedURLWithMethod(methodString, d.ossPath(path), expiresTime, q, nil)
 	return signedURL, nil
 }
 
