@@ -45,8 +45,6 @@ github.com/creack/pty v1.1.9/go.mod h1:oKZEueFk5CKHvIhNR5MUki03XCEU+Q6VDXinZuGJ3
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
-github.com/denverdino/aliyungo v0.0.0-20230411124812-ab98a9173ace h1:1SnCTPFh2AADpm7ti864EYaugexyiDFt55BW188+d6k=
-github.com/denverdino/aliyungo v0.0.0-20230411124812-ab98a9173ace/go.mod h1:TK05uvk4XXfK2kdvRwfcZ1NaxjDxmm7H3aQLko0mJxA=
 github.com/distribution/distribution v2.8.3+incompatible h1:RlpEXBLq/WPXYvBYMDAmBX/SnhD67qwtvW/DzKc8pAo=
 github.com/distribution/distribution v2.8.3+incompatible/go.mod h1:EgLm2NgWtdKgzF9NpMzUKgzmR7AMmb0VQi2B+ZzDRjc=
 github.com/distribution/reference v0.6.0 h1:0IXCQ5g4/QMHHkarYzh5l+u8T3t73zM5QvfrDyIgxBk=
@@ -202,6 +200,8 @@ github.com/uber/jaeger-client-go v2.30.0+incompatible h1:D6wyKGCecFaSRUpo8lCVbaO
 github.com/uber/jaeger-client-go v2.30.0+incompatible/go.mod h1:WVhlPFC8FDjOFMMWRy2pZqQJSXxYSwNYOkTr/Z6d3Kk=
 github.com/uber/jaeger-lib v2.4.1+incompatible h1:td4jdvLcExb4cBISKIpHuGoVXh+dVKhn2Um6rjCsSsg=
 github.com/uber/jaeger-lib v2.4.1+incompatible/go.mod h1:ComeNDZlWwrWnDv8aPp0Ba6+uUTzImX/AauajbLI56U=
+github.com/wzshiming/aliyungo v0.0.0-20241126040137-4b8c22b50cd3 h1:MwH8lliQekyhQXNq6RXiL7hHS66+nqMnnrRJ0Xn6s9Y=
+github.com/wzshiming/aliyungo v0.0.0-20241126040137-4b8c22b50cd3/go.mod h1:TK05uvk4XXfK2kdvRwfcZ1NaxjDxmm7H3aQLko0mJxA=
 github.com/wzshiming/cmux v0.4.2 h1:tI73lL5ztVfiqw7R5m5BkxT1+vQ2PBo/oV6qPbNGPiA=
 github.com/wzshiming/cmux v0.4.2/go.mod h1:JgE61QfZAjEyNMX0iZo9zIKY6pr9bHVY132yYPwHW5U=
 github.com/wzshiming/geario v0.0.0-20240308093553-a996e3817533 h1:mq74wxgDCz7Q6CqZYExt0DHf7Ze28lyMW/TNsfcuk8M=
