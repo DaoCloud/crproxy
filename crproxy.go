@@ -714,6 +714,7 @@ func (c *CRProxy) notFoundResponse(rw http.ResponseWriter, r *http.Request) {
 func (c *CRProxy) redirect(rw http.ResponseWriter, r *http.Request, blobPath string, info *PathInfo) error {
 	options := map[string]interface{}{
 		"method": r.Method,
+		"ip":     r.RemoteAddr,
 	}
 	linkExpires := c.linkExpires
 	if linkExpires > 0 {

@@ -484,6 +484,7 @@ func (d *driver) Delete(ctx context.Context, path string) error {
 
 // URLFor returns a URL which may be used to retrieve the content stored at the given path.
 // May return an UnsupportedMethodErr in certain StorageDriver implementations.
+// https://help.aliyun.com/zh/oss/developer-reference/ddd-signatures-to-urls
 func (d *driver) URLFor(ctx context.Context, path string, options map[string]interface{}) (string, error) {
 	methodString := "GET"
 	method, ok := options["method"]
@@ -504,17 +505,23 @@ func (d *driver) URLFor(ctx context.Context, path string, options map[string]int
 		}
 	}
 
-	var q url.Values
+	q := url.Values{}
 	referer, ok := options["referer"]
 	if ok {
 		refererString, ok := referer.(string)
 		if ok {
-			q = url.Values{
-				"referer": []string{refererString},
-			}
+			q["referer"] = []string{refererString}
 		}
 	}
 
+	ip, ok := options["ip"]
+	if ok {
+		ipString, ok := ip.(string)
+		if ok {
+			q["x-oss-ac-source-ip"] = []string{ipString}
+			q["x-oss-ac-subnet-mask"] = []string{"32"}
+		}
+	}
 	signedURL := d.Bucket.SignedURLWithMethod(methodString, d.ossPath(path), expiresTime, q, nil)
 	return signedURL, nil
 }
