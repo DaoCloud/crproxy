@@ -3,7 +3,7 @@ module github.com/daocloud/crproxy
 go 1.22
 
 require (
-	github.com/denverdino/aliyungo v0.0.0-20230411124812-ab98a9173ace
+	github.com/denverdino/aliyungo v0.0.0
 	github.com/distribution/reference v0.6.0
 	github.com/docker/distribution v0.0.0
 	github.com/gorilla/handlers v1.5.2
@@ -18,7 +18,10 @@ require (
 	golang.org/x/crypto v0.28.0
 )
 
-replace github.com/docker/distribution => github.com/distribution/distribution v2.8.3+incompatible
+replace (
+	github.com/denverdino/aliyungo => github.com/wzshiming/aliyungo v0.0.0-20241126040137-4b8c22b50cd3
+	github.com/docker/distribution => github.com/distribution/distribution v2.8.3+incompatible
+)
 
 require (
 	cloud.google.com/go/compute/metadata v0.3.0 // indirect
