@@ -439,7 +439,9 @@ func (c *CRProxy) do(cli *http.Client, r *http.Request) (resp *http.Response, er
 		r.Method = http.MethodGet
 		defer func() {
 			r.Method = http.MethodHead
-			resp.Body.Close()
+			if resp.Body != nil {
+				resp.Body.Close()
+			}
 			resp.Body = http.NoBody
 		}()
 	}
