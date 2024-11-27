@@ -435,15 +435,22 @@ func emptyTagsList(w http.ResponseWriter, r *http.Request) {
 }
 
 func (c *CRProxy) do(cli *http.Client, r *http.Request) (resp *http.Response, err error) {
-	if !c.allowHeadMethod && r.Method == http.MethodHead {
+	forHead := !c.allowHeadMethod && r.Method == http.MethodHead
+	if forHead {
 		r.Method = http.MethodGet
-		defer func() {
-			r.Method = http.MethodHead
-			resp.Body.Close()
-			resp.Body = http.NoBody
-		}()
 	}
 	resp, err = cli.Do(r)
+	if err != nil {
+		return nil, err
+	}
+
+	if forHead {
+		r.Method = http.MethodHead
+		if resp.Body != nil {
+			resp.Body.Close()
+		}
+		resp.Body = http.NoBody
+	}
 	return resp, err
 }
 
