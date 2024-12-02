@@ -491,6 +491,7 @@ func main() {
 			return token.Attribute{
 				NoRateLimit:   true,
 				NoAllowlist:   true,
+				NoBlock:       true,
 				AllowTagsList: true,
 			}, true
 		}

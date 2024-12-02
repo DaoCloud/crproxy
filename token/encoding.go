@@ -41,6 +41,7 @@ type Token struct {
 type Attribute struct {
 	NoRateLimit   bool `json:"no_rate_limit,omitempty"`
 	NoAllowlist   bool `json:"no_allowlist,omitempty"`
+	NoBlock       bool `json:"no_block,omitempty"`
 	AllowTagsList bool `json:"allow_tags_list,omitempty"`
 }
 

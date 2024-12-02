@@ -573,6 +573,7 @@ func (c *CRProxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		t.NoRateLimit = true
 		t.NoAllowlist = true
 		t.AllowTagsList = true
+		t.NoBlock = true
 	}
 
 	if c.disableTagsList && info.TagsList && !t.AllowTagsList {
@@ -580,7 +581,7 @@ func (c *CRProxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if c.blockFunc != nil && !c.isPrivileged(r, nil) {
+	if c.blockFunc != nil && !t.NoBlock {
 		blockMessage, block := c.block(&BlockInfo{
 			IP:   r.RemoteAddr,
 			Host: info.Host,
