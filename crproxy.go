@@ -518,7 +518,7 @@ func (c *CRProxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	if c.simpleAuth {
 		gt, err := c.authenticator.Authorization(r)
 		if err != nil {
-			if c.logger != nil {
+			if err != token.ErrNoAuth && c.logger != nil {
 				c.logger.Println("failed to authorize", r.RemoteAddr, err)
 			}
 			c.authenticator.Authenticate(rw, r)
