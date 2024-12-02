@@ -118,7 +118,7 @@ func (g *Generator) getToken(r *http.Request) (*Token, error) {
 			return nil, errcode.ErrorCodeDenied
 		}
 
-		if account != user {
+		if account != "" && account != user {
 			return nil, errcode.ErrorCodeDenied
 		}
 
