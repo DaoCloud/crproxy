@@ -62,7 +62,17 @@ func (c *CRProxy) cacheManifestResponse(rw http.ResponseWriter, r *http.Request,
 		return
 	}
 
-	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusBadRequest {
+	if resp.StatusCode >= http.StatusBadRequest && resp.StatusCode < http.StatusInternalServerError {
+		if c.cachedManifest(rw, r, info, false) {
+			if c.logger != nil {
+				c.logger.Println("origin manifest response 4xx, but hit caches", info.Host, info.Image, err, dumpResponse(resp))
+			}
+			return
+		}
+		if c.logger != nil {
+			c.logger.Println("origin manifest response 4xx", info.Host, info.Image, err, dumpResponse(resp))
+		}
+	} else if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusInternalServerError {
 		if c.cachedManifest(rw, r, info, false) {
 			if c.logger != nil {
 				c.logger.Println("origin manifest response 5xx, but hit caches", info.Host, info.Image, err, dumpResponse(resp))
