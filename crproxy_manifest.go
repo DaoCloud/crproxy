@@ -27,14 +27,14 @@ func manifestTagCachePath(host, image, tagOrBlob string) string {
 }
 
 func (c *CRProxy) cacheManifestResponse(rw http.ResponseWriter, r *http.Request, info *PathInfo, t *token.Token) {
-	if c.cachedManifest(rw, r, info, true) {
+	if c.tryFirstServeCachedManifest(rw, r, info) {
 		return
 	}
 
 	cli := c.getClientset(info.Host, info.Image)
 	resp, err := c.doWithAuth(cli, r, info.Host)
 	if err != nil {
-		if c.cachedManifest(rw, r, info, false) {
+		if c.fallbackServeCachedManifest(rw, r, info) {
 			return
 		}
 		if c.logger != nil {
@@ -49,7 +49,7 @@ func (c *CRProxy) cacheManifestResponse(rw http.ResponseWriter, r *http.Request,
 
 	switch resp.StatusCode {
 	case http.StatusUnauthorized, http.StatusForbidden:
-		if c.cachedManifest(rw, r, info, false) {
+		if c.fallbackServeCachedManifest(rw, r, info) {
 			if c.logger != nil {
 				c.logger.Println("origin manifest response 40x, but hit caches", info.Host, info.Image, err, dumpResponse(resp))
 			}
@@ -63,7 +63,7 @@ func (c *CRProxy) cacheManifestResponse(rw http.ResponseWriter, r *http.Request,
 	}
 
 	if resp.StatusCode >= http.StatusBadRequest && resp.StatusCode < http.StatusInternalServerError {
-		if c.cachedManifest(rw, r, info, false) {
+		if c.fallbackServeCachedManifest(rw, r, info) {
 			if c.logger != nil {
 				c.logger.Println("origin manifest response 4xx, but hit caches", info.Host, info.Image, err, dumpResponse(resp))
 			}
@@ -73,7 +73,7 @@ func (c *CRProxy) cacheManifestResponse(rw http.ResponseWriter, r *http.Request,
 			c.logger.Println("origin manifest response 4xx", info.Host, info.Image, err, dumpResponse(resp))
 		}
 	} else if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusInternalServerError {
-		if c.cachedManifest(rw, r, info, false) {
+		if c.fallbackServeCachedManifest(rw, r, info) {
 			if c.logger != nil {
 				c.logger.Println("origin manifest response 5xx, but hit caches", info.Host, info.Image, err, dumpResponse(resp))
 			}
@@ -120,8 +120,9 @@ func (c *CRProxy) cacheManifestContent(ctx context.Context, info *PathInfo, cont
 	h := sha256.New()
 	h.Write(content)
 	hash := hex.EncodeToString(h.Sum(nil)[:])
+	isHash := strings.HasPrefix(info.Manifests, "sha256:")
 
-	if strings.HasPrefix(info.Manifests, "sha256:") {
+	if isHash {
 		if info.Manifests[7:] != hash {
 			return fmt.Errorf("expected hash %s is not same to %s", info.Manifests[7:], hash)
 		}
@@ -130,6 +131,9 @@ func (c *CRProxy) cacheManifestContent(ctx context.Context, info *PathInfo, cont
 		err := c.storageDriver.PutContent(ctx, manifestLinkPath, []byte("sha256:"+hash))
 		if err != nil {
 			return err
+		}
+		if c.manifestCacheDuration > 0 {
+			c.manifestCache.Store(manifestLinkPath, time.Now())
 		}
 	}
 
@@ -144,27 +148,20 @@ func (c *CRProxy) cacheManifestContent(ctx context.Context, info *PathInfo, cont
 	if err != nil {
 		return err
 	}
-
-	if c.manifestCacheDuration > 0 {
-		c.manifestCache.Store(manifestLinkPath, time.Now())
-	}
 	return nil
 }
 
-func (c *CRProxy) cachedManifest(rw http.ResponseWriter, r *http.Request, info *PathInfo, try bool) bool {
-	if try && c.manifestCacheDuration == 0 {
-		return false
-	}
+func (c *CRProxy) tryFirstServeCachedManifest(rw http.ResponseWriter, r *http.Request, info *PathInfo) bool {
+	isHash := strings.HasPrefix(info.Manifests, "sha256:")
 
-	ctx := r.Context()
 	var manifestLinkPath string
-	if strings.HasPrefix(info.Manifests, "sha256:") {
+	if isHash {
 		manifestLinkPath = manifestRevisionsCachePath(info.Host, info.Image, info.Manifests[7:])
 	} else {
 		manifestLinkPath = manifestTagCachePath(info.Host, info.Image, info.Manifests)
 	}
 
-	if try {
+	if !isHash && c.manifestCacheDuration > 0 {
 		last, ok := c.manifestCache.Load(manifestLinkPath)
 		if !ok {
 			return false
@@ -175,42 +172,67 @@ func (c *CRProxy) cachedManifest(rw http.ResponseWriter, r *http.Request, info *
 		}
 	}
 
-	content, err := c.storageDriver.GetContent(ctx, manifestLinkPath)
-	if err == nil {
-		digest := string(content)
-		blobCachePath := blobCachePath(digest)
-		content, err := c.storageDriver.GetContent(ctx, blobCachePath)
-		if err == nil {
+	return c.serveCachedManifest(rw, r, manifestLinkPath)
+}
 
-			mt := struct {
-				MediaType string `json:"mediaType"`
-			}{}
-			err := json.Unmarshal(content, &mt)
-			if err != nil {
-				if c.logger != nil {
-					c.logger.Println("Manifest blob cache err", blobCachePath, err)
-				}
-				return false
-			}
-			if c.logger != nil {
-				c.logger.Println("Manifest blob cache hit", blobCachePath)
-			}
-			rw.Header().Set("docker-content-digest", digest)
-			rw.Header().Set("Content-Type", mt.MediaType)
-			rw.Header().Set("Content-Length", strconv.FormatInt(int64(len(content)), 10))
-			if r.Method != http.MethodHead {
-				rw.Write(content)
-			}
-			return true
-		}
-		if c.logger != nil {
-			c.logger.Println("Manifest blob cache missed", blobCachePath, err)
-		}
+func (c *CRProxy) fallbackServeCachedManifest(rw http.ResponseWriter, r *http.Request, info *PathInfo) bool {
+	isHash := strings.HasPrefix(info.Manifests, "sha256:")
+	if isHash {
+		return false
+	}
+	var manifestLinkPath string
+	if isHash {
+		manifestLinkPath = manifestRevisionsCachePath(info.Host, info.Image, info.Manifests[7:])
 	} else {
+		manifestLinkPath = manifestTagCachePath(info.Host, info.Image, info.Manifests)
+	}
+
+	return c.serveCachedManifest(rw, r, manifestLinkPath)
+}
+
+func (c *CRProxy) serveCachedManifest(rw http.ResponseWriter, r *http.Request, manifestLinkPath string) bool {
+	ctx := r.Context()
+
+	digestContent, err := c.storageDriver.GetContent(ctx, manifestLinkPath)
+	if err != nil {
 		if c.logger != nil {
 			c.logger.Println("Manifest cache missed", manifestLinkPath, err)
 		}
+		return false
 	}
 
-	return false
+	digest := string(digestContent)
+	blobCachePath := blobCachePath(digest)
+	content, err := c.storageDriver.GetContent(ctx, blobCachePath)
+	if err != nil {
+		if c.logger != nil {
+			c.logger.Println("Manifest blob cache missed", blobCachePath, err)
+		}
+		return false
+	}
+
+	mt := struct {
+		MediaType string `json:"mediaType"`
+	}{}
+	err = json.Unmarshal(content, &mt)
+	if err != nil {
+		if c.logger != nil {
+			c.logger.Println("Manifest blob cache err", blobCachePath, err)
+		}
+		return false
+	}
+	if c.logger != nil {
+		c.logger.Println("Manifest blob cache hit", blobCachePath)
+	}
+	rw.Header().Set("docker-content-digest", digest)
+	rw.Header().Set("Content-Type", mt.MediaType)
+	rw.Header().Set("Content-Length", strconv.FormatInt(int64(len(content)), 10))
+	if r.Method != http.MethodHead {
+		rw.Write(content)
+	}
+
+	if c.manifestCacheDuration > 0 {
+		c.manifestCache.Store(manifestLinkPath, time.Now())
+	}
+	return true
 }
