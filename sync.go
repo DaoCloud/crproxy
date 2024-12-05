@@ -2,11 +2,8 @@ package crproxy
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 
 	"github.com/distribution/reference"
@@ -37,7 +34,7 @@ func newNameWithoutDomain(named reference.Named, name string) reference.Named {
 }
 
 func (c *CRProxy) Sync(rw http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPut || c.storageDriver == nil {
+	if r.Method != http.MethodPut || c.cache == nil {
 		errcode.ServeJSON(rw, errcode.ErrorCodeUnsupported)
 		return
 	}
@@ -144,9 +141,6 @@ func (c *CRProxy) SyncImageLayer(ctx context.Context, ip, image string, filter f
 
 	bs := repo.Blobs(ctx)
 
-	buf := c.bytesPool.Get().([]byte)
-	defer c.bytesPool.Put(buf)
-
 	uniq := map[digest.Digest]struct{}{}
 	blobCallback := func(dgst digest.Digest, size int64, pf *manifestlist.PlatformSpec) error {
 		_, ok := uniq[dgst]
@@ -165,9 +159,9 @@ func (c *CRProxy) SyncImageLayer(ctx context.Context, ip, image string, filter f
 			return nil
 		}
 		uniq[dgst] = struct{}{}
+		blob := dgst.String()
 
-		blobPath := blobCachePath(dgst.String())
-		stat, err := c.storageDriver.Stat(ctx, blobPath)
+		stat, err := c.cache.StatBlob(ctx, blob)
 		if err == nil {
 			if size > 0 {
 				gotSize := stat.Size()
@@ -176,7 +170,7 @@ func (c *CRProxy) SyncImageLayer(ctx context.Context, ip, image string, filter f
 
 					if cb != nil {
 						err = cb(SyncProgress{
-							Digest:   dgst.String(),
+							Digest:   blob,
 							Size:     size,
 							Status:   "SKIP",
 							Platform: pf,
@@ -211,29 +205,7 @@ func (c *CRProxy) SyncImageLayer(ctx context.Context, ip, image string, filter f
 		}
 		defer f.Close()
 
-		fw, err := c.storageDriver.Writer(ctx, blobPath, false)
-		if err != nil {
-			return err
-		}
-
-		h := sha256.New()
-		n, err := io.CopyBuffer(fw, io.TeeReader(f, h), buf)
-		if err != nil {
-			fw.Cancel()
-			return err
-		}
-		if wantSize := fw.Size(); n != wantSize {
-			fw.Cancel()
-			return fmt.Errorf("expected %d bytes, got %d", wantSize, n)
-		}
-
-		hash := hex.EncodeToString(h.Sum(nil)[:])
-		if hex := dgst.Hex(); hex != hash {
-			fw.Cancel()
-			return fmt.Errorf("expected %s hash, got %s", hex, hash)
-		}
-
-		err = fw.Commit()
+		n, err := c.cache.PutBlob(ctx, blob, f)
 		if err != nil {
 			return err
 		}
@@ -259,11 +231,12 @@ func (c *CRProxy) SyncImageLayer(ctx context.Context, ip, image string, filter f
 		if err != nil {
 			return err
 		}
-		return c.cacheManifestContent(ctx, &PathInfo{
-			Host:      info.Host,
-			Image:     info.Name,
-			Manifests: tagOrHash,
-		}, playload)
+
+		_, _, err = c.cache.PutManifestContent(ctx, info.Host, info.Name, tagOrHash, playload)
+		if err != nil {
+			return err
+		}
+		return nil
 	}
 
 	err = getLayerFromManifestList(ctx, ms, ref, filter, blobCallback, manifestCallback)

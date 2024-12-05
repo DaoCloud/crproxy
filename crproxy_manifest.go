@@ -2,14 +2,9 @@ package crproxy
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"net/textproto"
-	"path"
 	"strconv"
 	"strings"
 	"time"
@@ -17,14 +12,6 @@ import (
 	"github.com/daocloud/crproxy/token"
 	"github.com/docker/distribution/registry/api/errcode"
 )
-
-func manifestRevisionsCachePath(host, image, tagOrBlob string) string {
-	return path.Join("/docker/registry/v2/repositories", host, image, "_manifests/revisions/sha256", tagOrBlob, "link")
-}
-
-func manifestTagCachePath(host, image, tagOrBlob string) string {
-	return path.Join("/docker/registry/v2/repositories", host, image, "_manifests/tags", tagOrBlob, "current/link")
-}
 
 func (c *CRProxy) cacheManifestResponse(rw http.ResponseWriter, r *http.Request, info *PathInfo, t *token.Token) {
 	if c.tryFirstServeCachedManifest(rw, r, info) {
@@ -91,7 +78,7 @@ func (c *CRProxy) cacheManifestResponse(rw http.ResponseWriter, r *http.Request,
 			return
 		}
 
-		err = c.cacheManifestContent(context.Background(), info, body)
+		_, _, err = c.cache.PutManifestContent(context.Background(), info.Host, info.Image, info.Manifests, body)
 		if err != nil {
 			c.errorResponse(rw, r, err)
 			return
@@ -102,53 +89,11 @@ func (c *CRProxy) cacheManifestResponse(rw http.ResponseWriter, r *http.Request,
 	}
 }
 
-func (c *CRProxy) cacheManifestContent(ctx context.Context, info *PathInfo, content []byte) error {
-	h := sha256.New()
-	h.Write(content)
-	hash := hex.EncodeToString(h.Sum(nil)[:])
-	isHash := strings.HasPrefix(info.Manifests, "sha256:")
-
-	if isHash {
-		if info.Manifests[7:] != hash {
-			return fmt.Errorf("expected hash %s is not same to %s", info.Manifests[7:], hash)
-		}
-	} else {
-		manifestLinkPath := manifestTagCachePath(info.Host, info.Image, info.Manifests)
-		err := c.storageDriver.PutContent(ctx, manifestLinkPath, []byte("sha256:"+hash))
-		if err != nil {
-			return err
-		}
-		if c.manifestCacheDuration > 0 {
-			c.manifestCache.Store(manifestLinkPath, time.Now())
-		}
-	}
-
-	manifestLinkPath := manifestRevisionsCachePath(info.Host, info.Image, hash)
-	err := c.storageDriver.PutContent(ctx, manifestLinkPath, []byte("sha256:"+hash))
-	if err != nil {
-		return err
-	}
-
-	blobCachePath := blobCachePath(hash)
-	err = c.storageDriver.PutContent(ctx, blobCachePath, content)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
 func (c *CRProxy) tryFirstServeCachedManifest(rw http.ResponseWriter, r *http.Request, info *PathInfo) bool {
 	isHash := strings.HasPrefix(info.Manifests, "sha256:")
 
-	var manifestLinkPath string
-	if isHash {
-		manifestLinkPath = manifestRevisionsCachePath(info.Host, info.Image, info.Manifests[7:])
-	} else {
-		manifestLinkPath = manifestTagCachePath(info.Host, info.Image, info.Manifests)
-	}
-
 	if !isHash && c.manifestCacheDuration > 0 {
-		last, ok := c.manifestCache.Load(manifestLinkPath)
+		last, ok := c.manifestCache.Load(manifestCacheKey(info))
 		if !ok {
 			return false
 		}
@@ -158,7 +103,7 @@ func (c *CRProxy) tryFirstServeCachedManifest(rw http.ResponseWriter, r *http.Re
 		}
 	}
 
-	return c.serveCachedManifest(rw, r, manifestLinkPath)
+	return c.serveCachedManifest(rw, r, info)
 }
 
 func (c *CRProxy) fallbackServeCachedManifest(rw http.ResponseWriter, r *http.Request, info *PathInfo) bool {
@@ -166,51 +111,43 @@ func (c *CRProxy) fallbackServeCachedManifest(rw http.ResponseWriter, r *http.Re
 	if isHash {
 		return false
 	}
-	var manifestLinkPath string
-	if isHash {
-		manifestLinkPath = manifestRevisionsCachePath(info.Host, info.Image, info.Manifests[7:])
-	} else {
-		manifestLinkPath = manifestTagCachePath(info.Host, info.Image, info.Manifests)
-	}
 
-	return c.serveCachedManifest(rw, r, manifestLinkPath)
+	return c.serveCachedManifest(rw, r, info)
 }
 
-func (c *CRProxy) serveCachedManifest(rw http.ResponseWriter, r *http.Request, manifestLinkPath string) bool {
+func (c *CRProxy) serveCachedManifest(rw http.ResponseWriter, r *http.Request, info *PathInfo) bool {
 	ctx := r.Context()
 
-	digestContent, err := c.storageDriver.GetContent(ctx, manifestLinkPath)
+	content, digest, mediaType, err := c.cache.GetManifestContent(ctx, info.Host, info.Image, info.Manifests)
 	if err != nil {
-		c.logger.Error("Manifest cache missed", "manifestLinkPath", manifestLinkPath, "error", err)
+		c.logger.Error("Manifest cache missed", "error", err)
 		return false
 	}
 
-	digest := string(digestContent)
-	blobCachePath := blobCachePath(digest)
-	content, err := c.storageDriver.GetContent(ctx, blobCachePath)
-	if err != nil {
-		c.logger.Error("Manifest blob cache missed", "blobCachePath", blobCachePath, "error", err)
-		return false
-	}
-
-	mt := struct {
-		MediaType string `json:"mediaType"`
-	}{}
-	err = json.Unmarshal(content, &mt)
-	if err != nil {
-		c.logger.Error("Manifest blob cache err", "blobCachePath", blobCachePath, "error", err)
-		return false
-	}
-	c.logger.Info("Manifest blob cache hit", "blobCachePath", blobCachePath)
-	rw.Header().Set("docker-content-digest", digest)
-	rw.Header().Set("Content-Type", mt.MediaType)
+	c.logger.Info("Manifest blob cache hit", "digest", digest)
+	rw.Header().Set("Docker-Content-Digest", digest)
+	rw.Header().Set("Content-Type", mediaType)
 	rw.Header().Set("Content-Length", strconv.FormatInt(int64(len(content)), 10))
 	if r.Method != http.MethodHead {
 		rw.Write(content)
 	}
 
 	if c.manifestCacheDuration > 0 {
-		c.manifestCache.Store(manifestLinkPath, time.Now())
+		c.manifestCache.Store(manifestCacheKey(info), time.Now())
 	}
 	return true
+}
+
+type cacheKey struct {
+	Host   string
+	Image  string
+	Digest string
+}
+
+func manifestCacheKey(info *PathInfo) cacheKey {
+	return cacheKey{
+		Host:   info.Host,
+		Image:  info.Image,
+		Digest: info.Manifests,
+	}
 }

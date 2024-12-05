@@ -19,6 +19,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/daocloud/crproxy/cache"
 	"github.com/daocloud/crproxy/clientset"
 	"github.com/docker/distribution/registry/storage/driver/factory"
 	"github.com/gorilla/handlers"
@@ -215,6 +216,7 @@ func main() {
 	}
 
 	if storageDriver != "" {
+		cacheOpts := []cache.Option{}
 		parameters := map[string]interface{}{}
 		for k, v := range storageParameters {
 			parameters[k] = v
@@ -224,9 +226,9 @@ func main() {
 			logger.Error("create storage driver failed", "error", err)
 			os.Exit(1)
 		}
-		opts = append(opts, crproxy.WithStorageDriver(sd))
+		cacheOpts = append(cacheOpts, cache.WithStorageDriver(sd))
 		if linkExpires > 0 {
-			opts = append(opts, crproxy.WithLinkExpires(linkExpires))
+			cacheOpts = append(cacheOpts, cache.WithLinkExpires(linkExpires))
 		}
 		if redirectLinks != "" {
 			u, err := url.Parse(redirectLinks)
@@ -234,8 +236,15 @@ func main() {
 				logger.Error("parse redirect links failed", "error", err)
 				os.Exit(1)
 			}
-			opts = append(opts, crproxy.WithRedirectLinks(u))
+			cacheOpts = append(cacheOpts, cache.WithRedirectLinks(u))
 		}
+
+		cache, err := cache.NewCache(cacheOpts...)
+		if err != nil {
+			logger.Error("create cache failed", "error", err)
+			os.Exit(1)
+		}
+		opts = append(opts, crproxy.WithCache(cache))
 	}
 
 	if allowImageListFromFile != "" {
