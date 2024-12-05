@@ -31,8 +31,8 @@ func (c *CRProxy) cacheManifestResponse(rw http.ResponseWriter, r *http.Request,
 		return
 	}
 
-	cli := c.getClientset(info.Host, info.Image)
-	resp, err := c.doWithAuth(cli, r, info.Host)
+	cli := c.client.GetClientset(info.Host, info.Image)
+	resp, err := c.client.DoWithAuth(cli, r, info.Host)
 	if err != nil {
 		if c.fallbackServeCachedManifest(rw, r, info) {
 			return

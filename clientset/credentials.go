@@ -1,4 +1,4 @@
-package crproxy
+package clientset
 
 import (
 	"net/http"

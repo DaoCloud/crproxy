@@ -19,6 +19,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/daocloud/crproxy/clientset"
 	"github.com/docker/distribution/registry/storage/driver/factory"
 	"github.com/gorilla/handlers"
 	"github.com/spf13/pflag"
@@ -140,8 +141,8 @@ func init() {
 	pflag.Parse()
 }
 
-func toUserAndPass(userpass []string) (map[string]crproxy.Userpass, error) {
-	bc := map[string]crproxy.Userpass{}
+func toUserAndPass(userpass []string) (map[string]clientset.Userpass, error) {
+	bc := map[string]clientset.Userpass{}
 	for _, up := range userpass {
 		s := strings.SplitN(up, "@", 3)
 		if len(s) != 2 {
@@ -155,7 +156,7 @@ func toUserAndPass(userpass []string) (map[string]crproxy.Userpass, error) {
 		host := s[1]
 		user := u[0]
 		pwd := u[1]
-		bc[host] = crproxy.Userpass{
+		bc[host] = clientset.Userpass{
 			Username: user,
 			Password: pwd,
 		}
@@ -188,11 +189,15 @@ func main() {
 			return nil
 		},
 	}
+	clientOpts := []clientset.Option{
+		clientset.WithLogger(logger),
+		clientset.WithBaseClient(cli),
+		clientset.WithMaxClientSizeForEachRegistry(16),
+		clientset.WithDisableKeepAlives(disableKeepAlives),
+	}
 
 	opts := []crproxy.Option{
-		crproxy.WithBaseClient(cli),
 		crproxy.WithLogger(logger),
-		crproxy.WithMaxClientSizeForEachRegistry(16),
 		crproxy.WithDomainAlias(map[string]string{
 			"docker.io": "registry-1.docker.io",
 			"ollama.ai": "registry.ollama.ai",
@@ -207,7 +212,6 @@ func main() {
 			}
 			return info
 		}),
-		crproxy.WithDisableKeepAlives(disableKeepAlives),
 	}
 
 	if storageDriver != "" {
@@ -421,7 +425,7 @@ func main() {
 			logger.Error("failed to toUserAndPass", "error", err)
 			os.Exit(1)
 		}
-		opts = append(opts, crproxy.WithUserAndPass(bc))
+		clientOpts = append(clientOpts, clientset.WithUserAndPass(bc))
 	}
 
 	if ipsSpeedLimit != "" {
@@ -456,7 +460,7 @@ func main() {
 	}
 
 	if retry > 0 {
-		opts = append(opts, crproxy.WithRetry(retry, retryInterval))
+		clientOpts = append(clientOpts, clientset.WithRetry(retry, retryInterval))
 	}
 	if limitDelay {
 		opts = append(opts, crproxy.WithLimitDelay(true))
@@ -556,12 +560,19 @@ func main() {
 	}
 
 	if allowHeadMethod {
-		opts = append(opts, crproxy.WithAllowHeadMethod(allowHeadMethod))
+		clientOpts = append(clientOpts, clientset.WithAllowHeadMethod(allowHeadMethod))
 	}
 
 	if manifestCacheDuration != 0 {
 		opts = append(opts, crproxy.WithManifestCacheDuration(manifestCacheDuration))
 	}
+
+	clientset, err := clientset.NewClientset(clientOpts...)
+	if err != nil {
+		logger.Error("failed to NewClientset", "error", err)
+		os.Exit(1)
+	}
+	opts = append(opts, crproxy.WithClient(clientset))
 
 	crp, err := crproxy.NewCRProxy(opts...)
 	if err != nil {

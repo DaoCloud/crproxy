@@ -125,14 +125,14 @@ func (c *CRProxy) SyncImageLayer(ctx context.Context, ip, image string, filter f
 	host = c.getDomainAlias(host)
 	info.Host = host
 
-	err = c.ping(host)
+	err = c.client.Ping(host)
 	if err != nil {
 		return err
 	}
 
-	cli := c.getClientset(host, name.Name())
+	cli := c.client.GetClientset(host, name.Name())
 
-	repo, err := client.NewRepository(name, c.hostURL(host), cli.Transport)
+	repo, err := client.NewRepository(name, c.client.HostURL(host), cli.Transport)
 	if err != nil {
 		return err
 	}

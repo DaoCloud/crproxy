@@ -1,8 +1,6 @@
 package crproxy
 
 import (
-	"context"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -14,17 +12,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/daocloud/crproxy/clientset"
 	"github.com/daocloud/crproxy/internal/maps"
 	"github.com/daocloud/crproxy/token"
 	"github.com/docker/distribution/registry/api/errcode"
-	"github.com/docker/distribution/registry/client/auth"
-	"github.com/docker/distribution/registry/client/auth/challenge"
-	"github.com/docker/distribution/registry/client/transport"
 	storagedriver "github.com/docker/distribution/registry/storage/driver"
 	"github.com/wzshiming/geario"
-	"github.com/wzshiming/hostmatcher"
-	"github.com/wzshiming/httpseek"
-	"github.com/wzshiming/lru"
 )
 
 var (
@@ -44,52 +37,42 @@ type BlockInfo struct {
 }
 
 type CRProxy struct {
-	baseClient              *http.Client
-	challengeManager        challenge.Manager
-	clientset               maps.SyncMap[string, *lru.LRU[string, *http.Client]]
-	clientSize              int
-	modify                  func(info *ImageInfo) *ImageInfo
-	insecureDomain          map[string]struct{}
-	domainDisableKeepAlives map[string]struct{}
-	domainAlias             map[string]string
-	userAndPass             map[string]Userpass
-	basicCredentials        *basicCredentials
-	mutClientset            sync.Mutex
-	bytesPool               sync.Pool
-	logger                  *slog.Logger
-	totalBlobsSpeedLimit    *geario.Gear
-	speedLimitRecord        maps.SyncMap[string, *geario.BPS]
-	blobsSpeedLimit         *geario.B
-	blobsSpeedLimitDuration time.Duration
-	ipsSpeedLimit           *geario.B
-	ipsSpeedLimitDuration   time.Duration
-	blockFunc               []func(*BlockInfo) (string, bool)
-	retry                   int
-	retryInterval           time.Duration
-	storageDriver           storagedriver.StorageDriver
-	linkExpires             time.Duration
-	mutCache                sync.Map
-	redirectLinks           *url.URL
-	limitDelay              bool
-	privilegedNoAuth        bool
-	disableTagsList         bool
-	simpleAuth              bool
-	matcher                 hostmatcher.Matcher
-
-	defaultRegistry         string
-	overrideDefaultRegistry map[string]string
-
+	client                   *clientset.Clientset
+	modify                   func(info *ImageInfo) *ImageInfo
+	domainAlias              map[string]string
+	bytesPool                sync.Pool
+	logger                   *slog.Logger
+	totalBlobsSpeedLimit     *geario.Gear
+	speedLimitRecord         maps.SyncMap[string, *geario.BPS]
+	blobsSpeedLimit          *geario.B
+	blobsSpeedLimitDuration  time.Duration
+	ipsSpeedLimit            *geario.B
+	ipsSpeedLimitDuration    time.Duration
+	blockFunc                []func(*BlockInfo) (string, bool)
+	storageDriver            storagedriver.StorageDriver
+	linkExpires              time.Duration
+	mutCache                 sync.Map
+	redirectLinks            *url.URL
+	limitDelay               bool
+	privilegedNoAuth         bool
+	disableTagsList          bool
+	simpleAuth               bool
+	defaultRegistry          string
+	overrideDefaultRegistry  map[string]string
 	privilegedFunc           func(r *http.Request, info *ImageInfo) bool
 	redirectToOriginBlobFunc func(r *http.Request, info *ImageInfo) bool
-	allowHeadMethod          bool
-
-	manifestCache         maps.SyncMap[string, time.Time]
-	manifestCacheDuration time.Duration
-
-	authenticator *token.Authenticator
+	manifestCache            maps.SyncMap[string, time.Time]
+	manifestCacheDuration    time.Duration
+	authenticator            *token.Authenticator
 }
 
 type Option func(c *CRProxy)
+
+func WithClient(client *clientset.Clientset) Option {
+	return func(c *CRProxy) {
+		c.client = client
+	}
+}
 
 func WithManifestCacheDuration(d time.Duration) Option {
 	return func(c *CRProxy) {
@@ -183,21 +166,9 @@ func WithTotalBlobsSpeedLimit(limit geario.B) Option {
 	}
 }
 
-func WithBaseClient(baseClient *http.Client) Option {
-	return func(c *CRProxy) {
-		c.baseClient = baseClient
-	}
-}
-
 func WithLogger(logger *slog.Logger) Option {
 	return func(c *CRProxy) {
 		c.logger = logger
-	}
-}
-
-func WithUserAndPass(userAndPass map[string]Userpass) Option {
-	return func(c *CRProxy) {
-		c.userAndPass = userAndPass
 	}
 }
 
@@ -213,37 +184,9 @@ func WithPathInfoModifyFunc(modify func(info *ImageInfo) *ImageInfo) Option {
 	}
 }
 
-func WithMaxClientSizeForEachRegistry(clientSize int) Option {
-	return func(c *CRProxy) {
-		c.clientSize = clientSize
-	}
-}
-
-func WithDisableKeepAlives(disableKeepAlives []string) Option {
-	return func(c *CRProxy) {
-		c.domainDisableKeepAlives = map[string]struct{}{}
-		for _, v := range disableKeepAlives {
-			c.domainDisableKeepAlives[v] = struct{}{}
-		}
-	}
-}
-
 func WithBlockFunc(blockFunc func(info *BlockInfo) (string, bool)) Option {
 	return func(c *CRProxy) {
 		c.blockFunc = append(c.blockFunc, blockFunc)
-	}
-}
-
-func WithRetry(retry int, retryInterval time.Duration) Option {
-	return func(c *CRProxy) {
-		c.retry = retry
-		c.retryInterval = retryInterval
-	}
-}
-
-func WithAllowHeadMethod(allowHeadMethod bool) Option {
-	return func(c *CRProxy) {
-		c.allowHeadMethod = allowHeadMethod
 	}
 }
 
@@ -255,10 +198,7 @@ func WithAuthenticator(authenticator *token.Authenticator) Option {
 
 func NewCRProxy(opts ...Option) (*CRProxy, error) {
 	c := &CRProxy{
-		logger:           slog.Default(),
-		challengeManager: challenge.NewSimpleManager(),
-		clientSize:       10240,
-		baseClient:       http.DefaultClient,
+		logger: slog.Default(),
 		bytesPool: sync.Pool{
 			New: func() interface{} {
 				return make([]byte, 32*1024)
@@ -269,13 +209,6 @@ func NewCRProxy(opts ...Option) (*CRProxy, error) {
 	for _, opt := range opts {
 		opt(c)
 	}
-	if len(c.userAndPass) != 0 {
-		bc, err := newBasicCredentials(c.userAndPass, c.getDomainAlias, c.getScheme)
-		if err != nil {
-			return nil, err
-		}
-		c.basicCredentials = bc
-	}
 
 	if c.simpleAuth {
 		if c.authenticator == nil {
@@ -283,89 +216,6 @@ func NewCRProxy(opts ...Option) (*CRProxy, error) {
 		}
 	}
 	return c, nil
-}
-
-func (c *CRProxy) hostURL(host string) string {
-	return c.getScheme(host) + "://" + host
-}
-
-func (c *CRProxy) pingURL(host string) string {
-	return c.hostURL(host) + prefix
-}
-
-func (c *CRProxy) getScheme(host string) string {
-	if c.insecureDomain != nil {
-		_, ok := c.insecureDomain[host]
-		if ok {
-			return "http"
-		}
-	}
-	return "https"
-}
-
-func (c *CRProxy) getClientset(host string, image string) *http.Client {
-	sets, hasSets := c.clientset.Load(host)
-	if hasSets {
-		client, ok := sets.Get(image)
-		if ok {
-			return client
-		}
-	}
-
-	c.mutClientset.Lock()
-	defer c.mutClientset.Unlock()
-	if sets == nil {
-		sets = lru.NewLRU(c.clientSize, func(image string, client *http.Client) {
-			c.logger.Info("evicted client", "host", host, "image", image)
-			client.CloseIdleConnections()
-		})
-		c.clientset.Store(host, sets)
-	}
-
-	c.logger.Info("cache client", "host", host, "image", image)
-	var credentialStore auth.CredentialStore
-	if c.basicCredentials != nil {
-		credentialStore = c.basicCredentials
-	}
-	authHandler := auth.NewTokenHandler(nil, credentialStore, image, "pull")
-
-	tr := c.baseClient.Transport
-
-	if c.domainDisableKeepAlives != nil {
-		if _, ok := c.domainDisableKeepAlives[host]; ok {
-			tr = c.disableKeepAlives(tr)
-		}
-	}
-
-	if c.retryInterval > 0 {
-		if tr == nil {
-			tr = http.DefaultTransport
-		}
-		tr = httpseek.NewMustReaderTransport(tr, func(request *http.Request, retry int, err error) error {
-			if errors.Is(err, context.Canceled) ||
-				errors.Is(err, context.DeadlineExceeded) {
-				return err
-			}
-			if c.retry > 0 && retry >= c.retry {
-				return err
-			}
-			c.logger.Info("Retry", "url", request.URL, "retry", retry, "error", err)
-			time.Sleep(c.retryInterval)
-			return nil
-		})
-	}
-
-	tr = transport.NewTransport(tr, auth.NewAuthorizer(c.challengeManager, authHandler))
-
-	client := &http.Client{
-		Transport:     tr,
-		CheckRedirect: c.baseClient.CheckRedirect,
-		Timeout:       c.baseClient.Timeout,
-		Jar:           c.baseClient.Jar,
-	}
-
-	sets.Put(image, client)
-	return client
 }
 
 func (c *CRProxy) disableKeepAlives(rt http.RoundTripper) http.RoundTripper {
@@ -385,31 +235,6 @@ func (c *CRProxy) disableKeepAlives(rt http.RoundTripper) http.RoundTripper {
 	return rt
 }
 
-func (c *CRProxy) ping(host string) error {
-	c.logger.Info("ping", "host", host)
-
-	ep := c.pingURL(host)
-	e, err := url.Parse(ep)
-	if err != nil {
-		return err
-	}
-	challenges, err := c.challengeManager.GetChallenges(*e)
-	if err == nil && len(challenges) != 0 {
-		return nil
-	}
-
-	resp, err := c.baseClient.Get(ep)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	err = c.challengeManager.AddResponse(resp)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
 func apiBase(w http.ResponseWriter, r *http.Request) {
 	const emptyJSON = "{}"
 	// Provide a simple /v2/ 200 OK response with empty json response.
@@ -425,50 +250,6 @@ func emptyTagsList(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Content-Length", fmt.Sprint(len(emptyTagsList)))
 	fmt.Fprint(w, emptyTagsList)
-}
-
-func (c *CRProxy) do(cli *http.Client, r *http.Request) (resp *http.Response, err error) {
-	forHead := !c.allowHeadMethod && r.Method == http.MethodHead
-	if forHead {
-		r.Method = http.MethodGet
-	}
-	resp, err = cli.Do(r)
-	if err != nil {
-		return nil, err
-	}
-
-	if forHead {
-		r.Method = http.MethodHead
-		if resp.Body != nil {
-			resp.Body.Close()
-		}
-		resp.Body = http.NoBody
-	}
-	return resp, err
-}
-
-func (c *CRProxy) doWithAuth(cli *http.Client, r *http.Request, host string) (*http.Response, error) {
-	resp, err := c.do(cli, r)
-	if err != nil {
-		return nil, err
-	}
-
-	if resp.StatusCode == http.StatusUnauthorized {
-		err = c.ping(host)
-		if err != nil {
-			c.logger.Warn("failed to ping", "host", host, "error", err)
-			return resp, nil
-		}
-
-		resp0, err0 := c.do(cli, r)
-		if err0 != nil {
-			c.logger.Warn("failed to redo", "host", host, "error", err)
-			return resp, nil
-		}
-		resp.Body.Close()
-		resp = resp0
-	}
-	return resp, nil
 }
 
 func getIP(str string) string {
@@ -595,7 +376,7 @@ func (c *CRProxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	r.RequestURI = ""
 	r.Host = info.Host
 	r.URL.Host = info.Host
-	r.URL.Scheme = c.getScheme(info.Host)
+	r.URL.Scheme = c.client.GetScheme(info.Host)
 	r.URL.Path = path
 	r.URL.RawQuery = ""
 	r.URL.ForceQuery = false
@@ -626,8 +407,8 @@ func (c *CRProxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 }
 
 func (c *CRProxy) directResponse(rw http.ResponseWriter, r *http.Request, info *PathInfo, t *token.Token) {
-	cli := c.getClientset(info.Host, info.Image)
-	resp, err := c.doWithAuth(cli, r, info.Host)
+	cli := c.client.GetClientset(info.Host, info.Image)
+	resp, err := c.client.DoWithAuth(cli, r, info.Host)
 	if err != nil {
 		c.logger.Warn("failed to request", "host", info.Host, "image", info.Image, "error", err)
 		errcode.ServeJSON(rw, errcode.ErrorCodeUnknown)
