@@ -31,9 +31,7 @@ func (c *CRProxy) cacheBlobResponse(rw http.ResponseWriter, r *http.Request, inf
 		select {
 		case <-ctx.Done():
 			err := ctx.Err().Error()
-			if c.logger != nil {
-				c.logger.Println(err)
-			}
+			c.logger.Error("context done", "error", err)
 			http.Error(rw, err, http.StatusInternalServerError)
 			return
 		case <-closeCh:
@@ -73,9 +71,7 @@ func (c *CRProxy) cacheBlobResponse(rw http.ResponseWriter, r *http.Request, inf
 		c.errorResponse(rw, r, ctx.Err())
 		return
 	}
-	if c.logger != nil {
-		c.logger.Println("Cache miss", blobPath)
-	}
+	c.logger.Info("Cache miss", "blobPath", blobPath)
 
 	type repo struct {
 		err  error
@@ -117,9 +113,7 @@ func (c *CRProxy) cacheBlobResponse(rw http.ResponseWriter, r *http.Request, inf
 
 		err = c.redirect(rw, r, blobPath, info)
 		if err != nil {
-			if c.logger != nil {
-				c.logger.Println("failed to redirect", blobPath, err)
-			}
+			c.logger.Error("failed to redirect", "blobPath", blobPath, "error", err)
 		}
 		return
 	}
@@ -183,9 +177,7 @@ func (c *CRProxy) redirectBlobResponse(rw http.ResponseWriter, r *http.Request, 
 	cli := c.getClientset(info.Host, info.Image)
 	resp, err := c.doWithAuth(cli, r, info.Host)
 	if err != nil {
-		if c.logger != nil {
-			c.logger.Println("failed to request", info.Host, info.Image, err)
-		}
+		c.logger.Error("failed to request", "host", info.Host, "image", info.Image, "error", err)
 		errcode.ServeJSON(rw, errcode.ErrorCodeUnknown)
 		return
 	}
@@ -195,9 +187,7 @@ func (c *CRProxy) redirectBlobResponse(rw http.ResponseWriter, r *http.Request, 
 
 	switch resp.StatusCode {
 	default:
-		if c.logger != nil {
-			c.logger.Println("failed to redirect blob", info.Host, info.Image, resp.StatusCode)
-		}
+		c.logger.Error("failed to redirect blob", "host", info.Host, "image", info.Image, "status", resp.StatusCode)
 		errcode.ServeJSON(rw, errcode.ErrorCodeUnavailable)
 		return
 	case http.StatusUnauthorized, http.StatusForbidden:

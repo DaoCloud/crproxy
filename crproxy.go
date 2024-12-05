@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/textproto"
@@ -14,7 +15,6 @@ import (
 	"time"
 
 	"github.com/daocloud/crproxy/internal/maps"
-	"github.com/daocloud/crproxy/logger"
 	"github.com/daocloud/crproxy/token"
 	"github.com/docker/distribution/registry/api/errcode"
 	"github.com/docker/distribution/registry/client/auth"
@@ -56,7 +56,7 @@ type CRProxy struct {
 	basicCredentials        *basicCredentials
 	mutClientset            sync.Mutex
 	bytesPool               sync.Pool
-	logger                  logger.Logger
+	logger                  *slog.Logger
 	totalBlobsSpeedLimit    *geario.Gear
 	speedLimitRecord        maps.SyncMap[string, *geario.BPS]
 	blobsSpeedLimit         *geario.B
@@ -189,7 +189,7 @@ func WithBaseClient(baseClient *http.Client) Option {
 	}
 }
 
-func WithLogger(logger logger.Logger) Option {
+func WithLogger(logger *slog.Logger) Option {
 	return func(c *CRProxy) {
 		c.logger = logger
 	}
@@ -255,6 +255,7 @@ func WithAuthenticator(authenticator *token.Authenticator) Option {
 
 func NewCRProxy(opts ...Option) (*CRProxy, error) {
 	c := &CRProxy{
+		logger:           slog.Default(),
 		challengeManager: challenge.NewSimpleManager(),
 		clientSize:       10240,
 		baseClient:       http.DefaultClient,
@@ -315,17 +316,13 @@ func (c *CRProxy) getClientset(host string, image string) *http.Client {
 	defer c.mutClientset.Unlock()
 	if sets == nil {
 		sets = lru.NewLRU(c.clientSize, func(image string, client *http.Client) {
-			if c.logger != nil {
-				c.logger.Println("evicted client", host, image)
-			}
+			c.logger.Info("evicted client", "host", host, "image", image)
 			client.CloseIdleConnections()
 		})
 		c.clientset.Store(host, sets)
 	}
 
-	if c.logger != nil {
-		c.logger.Println("cache client", host, image)
-	}
+	c.logger.Info("cache client", "host", host, "image", image)
 	var credentialStore auth.CredentialStore
 	if c.basicCredentials != nil {
 		credentialStore = c.basicCredentials
@@ -352,9 +349,7 @@ func (c *CRProxy) getClientset(host string, image string) *http.Client {
 			if c.retry > 0 && retry >= c.retry {
 				return err
 			}
-			if c.logger != nil {
-				c.logger.Println("Retry", request.URL, retry, err)
-			}
+			c.logger.Info("Retry", "url", request.URL, "retry", retry, "error", err)
 			time.Sleep(c.retryInterval)
 			return nil
 		})
@@ -386,16 +381,12 @@ func (c *CRProxy) disableKeepAlives(rt http.RoundTripper) http.RoundTripper {
 		}
 		return tr
 	}
-	if c.logger != nil {
-		c.logger.Println("failed to disable keep alives")
-	}
+	c.logger.Warn("failed to disable keep alives")
 	return rt
 }
 
 func (c *CRProxy) ping(host string) error {
-	if c.logger != nil {
-		c.logger.Println("ping", host)
-	}
+	c.logger.Info("ping", "host", host)
 
 	ep := c.pingURL(host)
 	e, err := url.Parse(ep)
@@ -465,17 +456,13 @@ func (c *CRProxy) doWithAuth(cli *http.Client, r *http.Request, host string) (*h
 	if resp.StatusCode == http.StatusUnauthorized {
 		err = c.ping(host)
 		if err != nil {
-			if c.logger != nil {
-				c.logger.Println("failed to ping", host, err)
-			}
+			c.logger.Warn("failed to ping", "host", host, "error", err)
 			return resp, nil
 		}
 
 		resp0, err0 := c.do(cli, r)
 		if err0 != nil {
-			if c.logger != nil {
-				c.logger.Println("failed to redo", host, err)
-			}
+			c.logger.Warn("failed to redo", "host", host, "error", err)
 			return resp, nil
 		}
 		resp.Body.Close()
@@ -518,8 +505,8 @@ func (c *CRProxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	if c.simpleAuth {
 		gt, err := c.authenticator.Authorization(r)
 		if err != nil {
-			if err != token.ErrNoAuth && c.logger != nil {
-				c.logger.Println("failed to authorize", r.RemoteAddr, err)
+			if err != token.ErrNoAuth {
+				c.logger.Warn("failed to authorize", "remoteAddr", r.RemoteAddr, "error", err)
 			}
 			c.authenticator.Authenticate(rw, r)
 			return
@@ -601,9 +588,7 @@ func (c *CRProxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 
 	path, err := info.Path()
 	if err != nil {
-		if c.logger != nil {
-			c.logger.Println("failed to get path", err)
-		}
+		c.logger.Warn("failed to get path", "error", err)
 		errcode.ServeJSON(rw, errcode.ErrorCodeUnknown)
 		return
 	}
@@ -644,9 +629,7 @@ func (c *CRProxy) directResponse(rw http.ResponseWriter, r *http.Request, info *
 	cli := c.getClientset(info.Host, info.Image)
 	resp, err := c.doWithAuth(cli, r, info.Host)
 	if err != nil {
-		if c.logger != nil {
-			c.logger.Println("failed to request", info.Host, info.Image, err)
-		}
+		c.logger.Warn("failed to request", "host", info.Host, "image", info.Image, "error", err)
 		errcode.ServeJSON(rw, errcode.ErrorCodeUnknown)
 		return
 	}
@@ -656,9 +639,7 @@ func (c *CRProxy) directResponse(rw http.ResponseWriter, r *http.Request, info *
 
 	switch resp.StatusCode {
 	case http.StatusUnauthorized, http.StatusForbidden:
-		if c.logger != nil {
-			c.logger.Println("origin direct response 40x, but hit caches", info.Host, info.Image, err, dumpResponse(resp))
-		}
+		c.logger.Warn("origin direct response 40x, but hit caches", "host", info.Host, "image", info.Image, "error", err, "response", dumpResponse(resp))
 		errcode.ServeJSON(rw, errcode.ErrorCodeDenied)
 		return
 	}
@@ -703,9 +684,7 @@ func (c *CRProxy) directResponse(rw http.ResponseWriter, r *http.Request, info *
 func (c *CRProxy) errorResponse(rw http.ResponseWriter, r *http.Request, err error) {
 	if err != nil {
 		e := err.Error()
-		if c.logger != nil {
-			c.logger.Println("error response", r.RemoteAddr, e)
-		}
+		c.logger.Warn("error response", "remoteAddr", r.RemoteAddr, "error", e)
 	}
 
 	if err == nil {
@@ -742,9 +721,7 @@ func (c *CRProxy) redirect(rw http.ResponseWriter, r *http.Request, blobPath str
 	if err != nil {
 		return err
 	}
-	if c.logger != nil {
-		c.logger.Println("Cache hit", blobPath, u)
-	}
+	c.logger.Info("Cache hit", "blobPath", blobPath, "url", u)
 	if c.redirectLinks != nil {
 		uri, err := url.Parse(u)
 		if err == nil {

@@ -21,9 +21,7 @@ func (c *CRProxy) checkLimit(rw http.ResponseWriter, r *http.Request, info *Path
 		bps, _ := c.speedLimitRecord.LoadOrStore(r.RemoteAddr, geario.NewBPSAver(c.ipsSpeedLimitDuration))
 		aver := bps.Aver()
 		if aver > *c.ipsSpeedLimit {
-			if c.logger != nil {
-				c.logger.Println("exceed limit", r.RemoteAddr, aver, *c.ipsSpeedLimit)
-			}
+			c.logger.Error("exceed limit", "remoteAddr", r.RemoteAddr, "aver", aver, "limit", *c.ipsSpeedLimit)
 			if c.limitDelay {
 				for bps.Aver() > *c.ipsSpeedLimit {
 					wait := time.Second
@@ -56,9 +54,7 @@ func (c *CRProxy) waitForLimit(r *http.Request, info *PathInfo, size int64) bool
 	if c.blobsSpeedLimit != nil && info.Blobs != "" {
 		dur := GetSleepDuration(geario.B(size), *c.blobsSpeedLimit, c.blobsSpeedLimitDuration)
 		if dur > 0 {
-			if c.logger != nil {
-				c.logger.Println("delay request", r.RemoteAddr, geario.B(size), dur)
-			}
+			c.logger.Info("delay request", "remoteAddr", r.RemoteAddr, "size", geario.B(size), "duration", dur)
 			select {
 			case <-r.Context().Done():
 				return false

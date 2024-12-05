@@ -37,9 +37,7 @@ func (c *CRProxy) cacheManifestResponse(rw http.ResponseWriter, r *http.Request,
 		if c.fallbackServeCachedManifest(rw, r, info) {
 			return
 		}
-		if c.logger != nil {
-			c.logger.Println("failed to request", info.Host, info.Image, err)
-		}
+		c.logger.Error("failed to request", "host", info.Host, "image", info.Image, "error", err)
 		errcode.ServeJSON(rw, errcode.ErrorCodeUnknown)
 		return
 	}
@@ -50,38 +48,26 @@ func (c *CRProxy) cacheManifestResponse(rw http.ResponseWriter, r *http.Request,
 	switch resp.StatusCode {
 	case http.StatusUnauthorized, http.StatusForbidden:
 		if c.fallbackServeCachedManifest(rw, r, info) {
-			if c.logger != nil {
-				c.logger.Println("origin manifest response 40x, but hit caches", info.Host, info.Image, err, dumpResponse(resp))
-			}
+			c.logger.Error("origin manifest response 40x, but hit caches", "host", info.Host, "image", info.Image, "error", err, "response", dumpResponse(resp))
 			return
 		}
-		if c.logger != nil {
-			c.logger.Println("origin manifest response 40x", info.Host, info.Image, err, dumpResponse(resp))
-		}
+		c.logger.Error("origin manifest response 40x", "host", info.Host, "image", info.Image, "error", err, "response", dumpResponse(resp))
 		errcode.ServeJSON(rw, errcode.ErrorCodeDenied)
 		return
 	}
 
 	if resp.StatusCode >= http.StatusBadRequest && resp.StatusCode < http.StatusInternalServerError {
 		if c.fallbackServeCachedManifest(rw, r, info) {
-			if c.logger != nil {
-				c.logger.Println("origin manifest response 4xx, but hit caches", info.Host, info.Image, err, dumpResponse(resp))
-			}
+			c.logger.Error("origin manifest response 4xx, but hit caches", "host", info.Host, "image", info.Image, "error", err, "response", dumpResponse(resp))
 			return
 		}
-		if c.logger != nil {
-			c.logger.Println("origin manifest response 4xx", info.Host, info.Image, err, dumpResponse(resp))
-		}
+		c.logger.Error("origin manifest response 4xx", "host", info.Host, "image", info.Image, "error", err, "response", dumpResponse(resp))
 	} else if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusInternalServerError {
 		if c.fallbackServeCachedManifest(rw, r, info) {
-			if c.logger != nil {
-				c.logger.Println("origin manifest response 5xx, but hit caches", info.Host, info.Image, err, dumpResponse(resp))
-			}
+			c.logger.Error("origin manifest response 5xx, but hit caches", "host", info.Host, "image", info.Image, "error", err, "response", dumpResponse(resp))
 			return
 		}
-		if c.logger != nil {
-			c.logger.Println("origin manifest response 5xx", info.Host, info.Image, err, dumpResponse(resp))
-		}
+		c.logger.Error("origin manifest response 5xx", "host", info.Host, "image", info.Image, "error", err, "response", dumpResponse(resp))
 	}
 
 	resp.Header.Del("Docker-Ratelimit-Source")
@@ -195,9 +181,7 @@ func (c *CRProxy) serveCachedManifest(rw http.ResponseWriter, r *http.Request, m
 
 	digestContent, err := c.storageDriver.GetContent(ctx, manifestLinkPath)
 	if err != nil {
-		if c.logger != nil {
-			c.logger.Println("Manifest cache missed", manifestLinkPath, err)
-		}
+		c.logger.Error("Manifest cache missed", "manifestLinkPath", manifestLinkPath, "error", err)
 		return false
 	}
 
@@ -205,9 +189,7 @@ func (c *CRProxy) serveCachedManifest(rw http.ResponseWriter, r *http.Request, m
 	blobCachePath := blobCachePath(digest)
 	content, err := c.storageDriver.GetContent(ctx, blobCachePath)
 	if err != nil {
-		if c.logger != nil {
-			c.logger.Println("Manifest blob cache missed", blobCachePath, err)
-		}
+		c.logger.Error("Manifest blob cache missed", "blobCachePath", blobCachePath, "error", err)
 		return false
 	}
 
@@ -216,14 +198,10 @@ func (c *CRProxy) serveCachedManifest(rw http.ResponseWriter, r *http.Request, m
 	}{}
 	err = json.Unmarshal(content, &mt)
 	if err != nil {
-		if c.logger != nil {
-			c.logger.Println("Manifest blob cache err", blobCachePath, err)
-		}
+		c.logger.Error("Manifest blob cache err", "blobCachePath", blobCachePath, "error", err)
 		return false
 	}
-	if c.logger != nil {
-		c.logger.Println("Manifest blob cache hit", blobCachePath)
-	}
+	c.logger.Info("Manifest blob cache hit", "blobCachePath", blobCachePath)
 	rw.Header().Set("docker-content-digest", digest)
 	rw.Header().Set("Content-Type", mt.MediaType)
 	rw.Header().Set("Content-Length", strconv.FormatInt(int64(len(content)), 10))

@@ -3,25 +3,25 @@ package token
 import (
 	"encoding/base64"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
 
-	"github.com/daocloud/crproxy/logger"
 	"github.com/docker/distribution/registry/api/errcode"
 )
 
 type Generator struct {
 	authFunc     func(r *http.Request, userinfo *url.Userinfo) (Attribute, bool)
-	logger       logger.Logger
+	logger       *slog.Logger
 	tokenEncoder *Encoder
 }
 
 func NewGenerator(
 	tokenEncoder *Encoder,
 	authFunc func(r *http.Request, userinfo *url.Userinfo) (Attribute, bool),
-	logger logger.Logger,
+	logger *slog.Logger,
 ) *Generator {
 	return &Generator{
 		authFunc:     authFunc,
@@ -51,9 +51,7 @@ func (g *Generator) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 
 	code, err := g.tokenEncoder.Encode(*t)
 	if err != nil {
-		if g.logger != nil {
-			g.logger.Println("Error encoding token", err)
-		}
+		g.logger.Error("Error encoding token", "error", err)
 		errcode.ServeJSON(rw, errcode.ErrorCodeUnknown)
 		return
 	}
@@ -106,9 +104,7 @@ func (g *Generator) getToken(r *http.Request) (*Token, error) {
 	}
 	auth := strings.SplitN(authorization, " ", 2)
 	if len(auth) != 2 {
-		if g.logger != nil {
-			g.logger.Println("Login failed", authorization)
-		}
+		g.logger.Error("Login failed", "authorization", authorization)
 		return nil, errcode.ErrorCodeDenied
 	}
 	switch auth[0] {
@@ -131,20 +127,14 @@ func (g *Generator) getToken(r *http.Request) (*Token, error) {
 
 		attribute, login := g.authFunc(r, u)
 		if !login {
-			if g.logger != nil {
-				g.logger.Println("Login failed user and password", u)
-			}
+			g.logger.Error("Login failed user and password", "user", u.Username())
 			return nil, errcode.ErrorCodeDenied
 		}
 		t.Attribute = attribute
 
-		if g.logger != nil {
-			g.logger.Println("Login succeed user", u.Username())
-		}
+		g.logger.Info("Login succeed user and password", "user", u.Username())
 	default:
-		if g.logger != nil {
-			g.logger.Println("Unsupported authorization", authorization)
-		}
+		g.logger.Error("Unsupported authorization", "authorization", authorization)
 		return nil, errcode.ErrorCodeDenied
 	}
 

@@ -172,9 +172,7 @@ func (c *CRProxy) SyncImageLayer(ctx context.Context, ip, image string, filter f
 			if size > 0 {
 				gotSize := stat.Size()
 				if size == gotSize {
-					if c.logger != nil {
-						c.logger.Println("skip blob", dgst)
-					}
+					c.logger.Info("skip blob", "digest", dgst)
 
 					if cb != nil {
 						err = cb(SyncProgress{
@@ -189,13 +187,9 @@ func (c *CRProxy) SyncImageLayer(ctx context.Context, ip, image string, filter f
 					}
 					return nil
 				}
-				if c.logger != nil {
-					c.logger.Println("size is not meeting expectations", dgst, size, gotSize)
-				}
+				c.logger.Error("size is not meeting expectations", "digest", dgst, "size", size, "gotSize", gotSize)
 			} else {
-				if c.logger != nil {
-					c.logger.Println("skip blob", dgst)
-				}
+				c.logger.Info("skip blob", "digest", dgst)
 				if cb != nil {
 					err = cb(SyncProgress{
 						Digest:   dgst.String(),
@@ -244,9 +238,7 @@ func (c *CRProxy) SyncImageLayer(ctx context.Context, ip, image string, filter f
 			return err
 		}
 
-		if c.logger != nil {
-			c.logger.Println("sync blob", dgst)
-		}
+		c.logger.Info("sync blob", "digest", dgst)
 
 		if cb != nil {
 			err = cb(SyncProgress{

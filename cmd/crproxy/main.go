@@ -8,7 +8,7 @@ import (
 	"encoding/csv"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"net/http/pprof"
 	"net/url"
@@ -165,7 +165,7 @@ func toUserAndPass(userpass []string) (map[string]crproxy.Userpass, error) {
 
 func main() {
 	ctx := context.Background()
-	logger := log.New(os.Stderr, "[cr proxy] ", log.LstdFlags)
+	logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
 
 	mux := http.NewServeMux()
 	cli := &http.Client{
@@ -180,7 +180,7 @@ func main() {
 
 			lastRedirect := req.URL.String()
 			s = append(s, lastRedirect)
-			logger.Println("redirect", s)
+			logger.Info("redirect", "redirects", s)
 
 			if v := crproxy.GetCtxValue(req.Context()); v != nil {
 				v.LastRedirect = lastRedirect
@@ -217,7 +217,7 @@ func main() {
 		}
 		sd, err := factory.Create(storageDriver, parameters)
 		if err != nil {
-			logger.Println("create storage driver failed:", err)
+			logger.Error("create storage driver failed", "error", err)
 			os.Exit(1)
 		}
 		opts = append(opts, crproxy.WithStorageDriver(sd))
@@ -227,7 +227,7 @@ func main() {
 		if redirectLinks != "" {
 			u, err := url.Parse(redirectLinks)
 			if err != nil {
-				logger.Println("parse redirect links failed:", err)
+				logger.Error("parse redirect links failed", "error", err)
 				os.Exit(1)
 			}
 			opts = append(opts, crproxy.WithRedirectLinks(u))
@@ -237,14 +237,14 @@ func main() {
 	if allowImageListFromFile != "" {
 		f, err := os.ReadFile(allowImageListFromFile)
 		if err != nil {
-			logger.Println("can't read allow list file", allowImageListFromFile, ":", err)
+			logger.Error("can't read allow list file", "file", allowImageListFromFile, "error", err)
 			os.Exit(1)
 		}
 
 		var matcher atomic.Pointer[hostmatcher.Matcher]
 		m, err := getListFrom(bytes.NewReader(f))
 		if err != nil {
-			logger.Println("can't read allow list file", allowImageListFromFile, ":", err)
+			logger.Error("can't read allow list file", "file", allowImageListFromFile, "error", err)
 			os.Exit(1)
 		}
 		matcher.Store(&m)
@@ -253,14 +253,14 @@ func main() {
 			mux.HandleFunc("PUT /internal/api/allows", func(rw http.ResponseWriter, r *http.Request) {
 				body, err := io.ReadAll(r.Body)
 				if err != nil {
-					logger.Println("read body failed:", err)
+					logger.Error("read body failed", "error", err)
 					rw.WriteHeader(http.StatusBadRequest)
 					rw.Write([]byte(err.Error()))
 					return
 				}
 				m, err := getListFrom(bytes.NewReader(body))
 				if err != nil {
-					logger.Println("can't read allow list file", allowImageListFromFile, ":", err)
+					logger.Error("can't read allow list file", "file", allowImageListFromFile, "error", err)
 					rw.WriteHeader(http.StatusBadRequest)
 					rw.Write([]byte(err.Error()))
 					return
@@ -268,7 +268,7 @@ func main() {
 
 				err = os.WriteFile(allowImageListFromFile, body, 0644)
 				if err != nil {
-					logger.Println("write file failed:", err)
+					logger.Error("write file failed", "error", err)
 					rw.WriteHeader(http.StatusBadRequest)
 					rw.Write([]byte(err.Error()))
 					return
@@ -317,13 +317,13 @@ func main() {
 		if privilegedImageListFromFile != "" {
 			f, err := os.ReadFile(privilegedImageListFromFile)
 			if err != nil {
-				logger.Println("can't read privileged list file", privilegedImageListFromFile, ":", err)
+				logger.Error("can't read privileged list file", "file", privilegedImageListFromFile, "error", err)
 				os.Exit(1)
 			}
 
 			m, err := getListFrom(bytes.NewReader(f))
 			if err != nil {
-				logger.Println("can't read privileged list file", privilegedImageListFromFile, ":", err)
+				logger.Error("can't read privileged list file", "file", privilegedImageListFromFile, "error", err)
 				os.Exit(1)
 			}
 			matcher.Store(&m)
@@ -332,14 +332,14 @@ func main() {
 				mux.HandleFunc("PUT /internal/api/privileged", func(rw http.ResponseWriter, r *http.Request) {
 					body, err := io.ReadAll(r.Body)
 					if err != nil {
-						logger.Println("read body failed:", err)
+						logger.Error("read body failed", "error", err)
 						rw.WriteHeader(http.StatusBadRequest)
 						rw.Write([]byte(err.Error()))
 						return
 					}
 					m, err := getListFrom(bytes.NewReader(body))
 					if err != nil {
-						logger.Println("can't read allow list file", privilegedImageListFromFile, ":", err)
+						logger.Error("can't read privileged list file", "file", privilegedImageListFromFile, "error", err)
 						rw.WriteHeader(http.StatusBadRequest)
 						rw.Write([]byte(err.Error()))
 						return
@@ -347,7 +347,7 @@ func main() {
 
 					err = os.WriteFile(privilegedImageListFromFile, body, 0644)
 					if err != nil {
-						logger.Println("write file failed:", err)
+						logger.Error("write file failed", "file", privilegedImageListFromFile, "error", err)
 						rw.WriteHeader(http.StatusBadRequest)
 						rw.Write([]byte(err.Error()))
 						return
@@ -383,12 +383,12 @@ func main() {
 	if blockIPListFromFile != "" {
 		f, err := os.ReadFile(blockIPListFromFile)
 		if err != nil {
-			logger.Println("can't read block ip list file", blockIPListFromFile, ":", err)
+			logger.Error("can't read block ip list file", "file", blockIPListFromFile, "error", err)
 			os.Exit(1)
 		}
 		bf, err := getIPReasonCSVListFrom(bytes.NewReader(f))
 		if err != nil {
-			logger.Println("can't read block ip list file", blockIPListFromFile, ":", err)
+			logger.Error("can't read block ip list file", "file", blockIPListFromFile, "error", err)
 			os.Exit(1)
 		}
 
@@ -403,7 +403,7 @@ func main() {
 			mux.HandleFunc("PUT /internal/api/block-ips", func(rw http.ResponseWriter, r *http.Request) {
 				blockFunc, err := getIPReasonCSVListFrom(r.Body)
 				if err != nil {
-					logger.Println("can't read block ip list file", blockIPListFromFile, ":", err)
+					logger.Error("can't read block ip list file", "file", blockIPListFromFile, "error", err)
 					rw.WriteHeader(http.StatusBadRequest)
 					rw.Write([]byte(err.Error()))
 					return
@@ -418,7 +418,7 @@ func main() {
 	if len(userpass) != 0 {
 		bc, err := toUserAndPass(userpass)
 		if err != nil {
-			logger.Println("failed to toUserAndPass:", err)
+			logger.Error("failed to toUserAndPass", "error", err)
 			os.Exit(1)
 		}
 		opts = append(opts, crproxy.WithUserAndPass(bc))
@@ -427,7 +427,7 @@ func main() {
 	if ipsSpeedLimit != "" {
 		b, d, err := getLimit(ipsSpeedLimit)
 		if err != nil {
-			logger.Println("failed to getLimit:", err)
+			logger.Error("failed to getLimit", "error", err)
 			os.Exit(1)
 		}
 		opts = append(opts, crproxy.WithIPsSpeedLimit(b, d))
@@ -436,7 +436,7 @@ func main() {
 	if blobsSpeedLimit != "" {
 		b, d, err := getLimit(blobsSpeedLimit)
 		if err != nil {
-			logger.Println("failed to getLimit:", err)
+			logger.Error("failed to getLimit", "error", err)
 			os.Exit(1)
 		}
 		opts = append(opts, crproxy.WithBlobsSpeedLimit(b, d))
@@ -445,7 +445,7 @@ func main() {
 	if totalBlobsSpeedLimit != "" {
 		b, err := geario.FromBytesSize(totalBlobsSpeedLimit)
 		if err != nil {
-			logger.Println("failed to FromBytesSize:", err)
+			logger.Error("failed to FromBytesSize", "error", err)
 			os.Exit(1)
 		}
 		opts = append(opts, crproxy.WithTotalBlobsSpeedLimit(b))
@@ -503,7 +503,7 @@ func main() {
 		if tokenPrivateKeyFile == "" && tokenPublicKeyFile == "" {
 			k, err := pki.GenerateKey()
 			if err != nil {
-				logger.Println("failed to GenerateKey:", err)
+				logger.Error("failed to GenerateKey", "error", err)
 				os.Exit(1)
 			}
 			privateKey = k
@@ -512,12 +512,12 @@ func main() {
 			if tokenPrivateKeyFile != "" {
 				privateKeyData, err := os.ReadFile(tokenPrivateKeyFile)
 				if err != nil {
-					logger.Println("failed to ReadFile:", err)
+					logger.Error("failed to ReadFile", "file", tokenPrivateKeyFile, "error", err)
 					os.Exit(1)
 				}
 				k, err := pki.DecodePrivateKey(privateKeyData)
 				if err != nil {
-					logger.Println("failed to DecodePrivateKey:", err)
+					logger.Error("failed to DecodePrivateKey", "file", tokenPrivateKeyFile, "error", err)
 					os.Exit(1)
 				}
 				privateKey = k
@@ -525,12 +525,12 @@ func main() {
 			if tokenPublicKeyFile != "" {
 				publicKeyData, err := os.ReadFile(tokenPublicKeyFile)
 				if err != nil {
-					logger.Println("failed to ReadFile:", err)
+					logger.Error("failed to ReadFile", "file", tokenPublicKeyFile, "error", err)
 					os.Exit(1)
 				}
 				k, err := pki.DecodePublicKey(publicKeyData)
 				if err != nil {
-					logger.Println("failed to DecodePublicKey:", err)
+					logger.Error("failed to DecodePublicKey", "file", tokenPublicKeyFile, "error", err)
 					os.Exit(1)
 				}
 				publicKey = k
@@ -565,7 +565,7 @@ func main() {
 
 	crp, err := crproxy.NewCRProxy(opts...)
 	if err != nil {
-		logger.Println("failed to NewCRProxy:", err)
+		logger.Error("failed to NewCRProxy", "error", err)
 		os.Exit(1)
 	}
 
@@ -596,7 +596,7 @@ func main() {
 
 	err = server.Run(ctx, address, handler, acmeHosts, acmeCacheDir, certFile, privateKeyFile)
 	if err != nil {
-		logger.Println("failed to ListenAndServe:", err)
+		logger.Error("failed to ListenAndServe", "error", err)
 		os.Exit(1)
 	}
 }
