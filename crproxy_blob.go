@@ -2,30 +2,18 @@ package crproxy
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
-	"io"
 	"net/http"
-	"path"
 	"strconv"
-	"strings"
 
 	"github.com/daocloud/crproxy/token"
 	"github.com/docker/distribution/registry/api/errcode"
 )
 
-func blobCachePath(blob string) string {
-	blob = strings.TrimPrefix(blob, "sha256:")
-	return path.Join("/docker/registry/v2/blobs/sha256", blob[:2], blob, "data")
-}
-
 func (c *CRProxy) cacheBlobResponse(rw http.ResponseWriter, r *http.Request, info *PathInfo, t *token.Token) {
 	ctx := r.Context()
 
-	blobPath := blobCachePath(info.Blobs)
-
-	closeValue, loaded := c.mutCache.LoadOrStore(blobPath, make(chan struct{}))
+	closeValue, loaded := c.mutCache.LoadOrStore(info.Blobs, make(chan struct{}))
 	closeCh := closeValue.(chan struct{})
 	for loaded {
 		select {
@@ -36,16 +24,16 @@ func (c *CRProxy) cacheBlobResponse(rw http.ResponseWriter, r *http.Request, inf
 			return
 		case <-closeCh:
 		}
-		closeValue, loaded = c.mutCache.LoadOrStore(blobPath, make(chan struct{}))
+		closeValue, loaded = c.mutCache.LoadOrStore(info.Blobs, make(chan struct{}))
 		closeCh = closeValue.(chan struct{})
 	}
 
 	doneCache := func() {
-		c.mutCache.Delete(blobPath)
+		c.mutCache.Delete(info.Blobs)
 		close(closeCh)
 	}
 
-	stat, err := c.storageDriver.Stat(ctx, blobPath)
+	stat, err := c.cache.StatBlob(ctx, info.Blobs)
 	if err == nil {
 		doneCache()
 
@@ -64,14 +52,14 @@ func (c *CRProxy) cacheBlobResponse(rw http.ResponseWriter, r *http.Request, inf
 			}
 		}
 
-		err = c.redirect(rw, r, blobPath, info)
+		err = c.redirect(rw, r, info.Blobs, info)
 		if err == nil {
 			return
 		}
 		c.errorResponse(rw, r, ctx.Err())
 		return
 	}
-	c.logger.Info("Cache miss", "blobPath", blobPath)
+	c.logger.Info("Cache miss", "digest", info.Blobs)
 
 	type repo struct {
 		err  error
@@ -81,7 +69,7 @@ func (c *CRProxy) cacheBlobResponse(rw http.ResponseWriter, r *http.Request, inf
 
 	go func() {
 		defer doneCache()
-		size, err := c.cacheBlobContent(context.Background(), r, blobPath, info)
+		size, err := c.cacheBlobContent(context.Background(), r, info)
 		signalCh <- repo{
 			err:  err,
 			size: size,
@@ -111,15 +99,15 @@ func (c *CRProxy) cacheBlobResponse(rw http.ResponseWriter, r *http.Request, inf
 			}
 		}
 
-		err = c.redirect(rw, r, blobPath, info)
+		err = c.redirect(rw, r, info.Blobs, info)
 		if err != nil {
-			c.logger.Error("failed to redirect", "blobPath", blobPath, "error", err)
+			c.logger.Error("failed to redirect", "digest", info.Blobs, "error", err)
 		}
 		return
 	}
 }
 
-func (c *CRProxy) cacheBlobContent(ctx context.Context, r *http.Request, blobPath string, info *PathInfo) (int64, error) {
+func (c *CRProxy) cacheBlobContent(ctx context.Context, r *http.Request, info *PathInfo) (int64, error) {
 	cli := c.client.GetClientset(info.Host, info.Image)
 	resp, err := c.client.DoWithAuth(cli, r.WithContext(ctx), info.Host)
 	if err != nil {
@@ -138,37 +126,7 @@ func (c *CRProxy) cacheBlobContent(ctx context.Context, r *http.Request, blobPat
 		return 0, errcode.ErrorCodeUnknown.WithMessage(fmt.Sprintf("Source response code %d", resp.StatusCode))
 	}
 
-	buf := c.bytesPool.Get().([]byte)
-	defer c.bytesPool.Put(buf)
-
-	fw, err := c.storageDriver.Writer(ctx, blobPath, false)
-	if err != nil {
-		return 0, err
-	}
-
-	h := sha256.New()
-	n, err := io.CopyBuffer(fw, io.TeeReader(resp.Body, h), buf)
-	if err != nil {
-		fw.Cancel()
-		return 0, err
-	}
-
-	if n != resp.ContentLength {
-		fw.Cancel()
-		return 0, fmt.Errorf("expected %d bytes, got %d", resp.ContentLength, n)
-	}
-
-	hash := hex.EncodeToString(h.Sum(nil)[:])
-	if info.Blobs[7:] != hash {
-		fw.Cancel()
-		return 0, fmt.Errorf("expected %s hash, got %s", info.Blobs[7:], hash)
-	}
-
-	err = fw.Commit()
-	if err != nil {
-		return 0, err
-	}
-	return n, nil
+	return c.cache.PutBlob(ctx, info.Blobs, resp.Body)
 }
 
 func (c *CRProxy) redirectBlobResponse(rw http.ResponseWriter, r *http.Request, info *PathInfo) {
