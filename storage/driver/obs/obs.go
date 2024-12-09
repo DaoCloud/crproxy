@@ -135,30 +135,36 @@ type Driver struct {
 
 // FromParameters constructs a new Driver with a given parameters map
 // Required parameters:
-// - accesskey
-// - secretkey
+// - accesskeyid
+// - accesskeysecret
 // - region
 // - bucket
 // - encrypt
 func FromParameters(parameters map[string]interface{}) (*Driver, error) {
 	// Providing no values for these is valid in case the user is authenticating
-	accessKey, ok := parameters["accesskey"]
+	accessKey, ok := parameters["accesskeyid"]
 	if !ok {
 		return nil, fmt.Errorf("No accesskeyid parameter provided")
 	}
-	secretKey, ok := parameters["secretkey"]
+	secretKey, ok := parameters["accesskeysecret"]
 	if !ok {
 		return nil, fmt.Errorf("No accesskeysecret parameter provided")
-	}
-
-	endpoint, ok := parameters["endpoint"]
-	if !ok || fmt.Sprint(endpoint) == "" {
-		return nil, fmt.Errorf("No region endpoint parameter provided")
 	}
 
 	bucket, ok := parameters["bucket"]
 	if !ok || fmt.Sprint(bucket) == "" {
 		return nil, fmt.Errorf("No bucket parameter provided")
+	}
+
+	region, okRegion := parameters["region"]
+	endpoint, okEndpoint := parameters["endpoint"]
+
+	if !okRegion && !okEndpoint {
+		return nil, fmt.Errorf("No region pr endpoint parameter provided")
+	}
+
+	if !okEndpoint && okRegion {
+		endpoint = "obs." + fmt.Sprint(region) + ".myhuaweicloud.com"
 	}
 
 	storageClass := obs.StorageClassStandard
