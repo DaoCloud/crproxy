@@ -23,6 +23,7 @@ type flagpole struct {
 	ListFromFile      string
 	Platform          []string
 	MaxWarn           int
+	Userpass          []string
 }
 
 func NewCommand() *cobra.Command {
@@ -48,6 +49,8 @@ func NewCommand() *cobra.Command {
 	cmd.Flags().StringVar(&flags.ListFromFile, "list-from-file", flags.ListFromFile, "List from file")
 	cmd.Flags().StringSliceVar(&flags.Platform, "platform", flags.Platform, "Platform")
 	cmd.Flags().IntVar(&flags.MaxWarn, "max-warn", flags.MaxWarn, "Max warn")
+	cmd.Flags().StringSliceVarP(&flags.Userpass, "user", "u", flags.Userpass, "host and username and password -u user:pwd@host")
+
 	return cmd
 }
 
@@ -77,6 +80,14 @@ func runE(ctx context.Context, flags *flagpole) error {
 	clientOpts := []clientset.Option{
 		clientset.WithLogger(logger),
 		clientset.WithMaxClientSizeForEachRegistry(16),
+	}
+
+	if len(flags.Userpass) != 0 {
+		bc, err := clientset.ToUserAndPass(flags.Userpass)
+		if err != nil {
+			return fmt.Errorf("failed to toUserAndPass: %w", err)
+		}
+		clientOpts = append(clientOpts, clientset.WithUserAndPass(bc))
 	}
 
 	client, err := clientset.NewClientset(clientOpts...)

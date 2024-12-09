@@ -1,6 +1,7 @@
 package clientset
 
 import (
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -11,6 +12,29 @@ import (
 type Userpass struct {
 	Username string
 	Password string
+}
+
+func ToUserAndPass(userpass []string) (map[string]Userpass, error) {
+	bc := map[string]Userpass{}
+	for _, up := range userpass {
+		s := strings.SplitN(up, "@", 3)
+		if len(s) != 2 {
+			return nil, fmt.Errorf("invalid userpass %q", up)
+		}
+
+		u := strings.SplitN(s[0], ":", 3)
+		if len(s) != 2 {
+			return nil, fmt.Errorf("invalid userpass %q", up)
+		}
+		host := s[1]
+		user := u[0]
+		pwd := u[1]
+		bc[host] = Userpass{
+			Username: user,
+			Password: pwd,
+		}
+	}
+	return bc, nil
 }
 
 type basicCredentials struct {

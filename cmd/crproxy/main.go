@@ -163,29 +163,6 @@ func main() {
 	}
 }
 
-func toUserAndPass(userpass []string) (map[string]clientset.Userpass, error) {
-	bc := map[string]clientset.Userpass{}
-	for _, up := range userpass {
-		s := strings.SplitN(up, "@", 3)
-		if len(s) != 2 {
-			return nil, fmt.Errorf("invalid userpass %q", up)
-		}
-
-		u := strings.SplitN(s[0], ":", 3)
-		if len(s) != 2 {
-			return nil, fmt.Errorf("invalid userpass %q", up)
-		}
-		host := s[1]
-		user := u[0]
-		pwd := u[1]
-		bc[host] = clientset.Userpass{
-			Username: user,
-			Password: pwd,
-		}
-	}
-	return bc, nil
-}
-
 func run(ctx context.Context) {
 	logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
 
@@ -449,7 +426,7 @@ func run(ctx context.Context) {
 	}
 
 	if len(userpass) != 0 {
-		bc, err := toUserAndPass(userpass)
+		bc, err := clientset.ToUserAndPass(userpass)
 		if err != nil {
 			logger.Error("failed to toUserAndPass", "error", err)
 			os.Exit(1)
