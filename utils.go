@@ -162,6 +162,6 @@ func isDomainName(s string) bool {
 }
 
 func dumpResponse(resp *http.Response) string {
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 100))
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
 	return fmt.Sprintf("%d %d %q", resp.StatusCode, resp.ContentLength, string(body))
 }
