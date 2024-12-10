@@ -46,6 +46,7 @@ type SyncManager struct {
 	cache       *cache.Cache
 	logger      *slog.Logger
 	domainAlias map[string]string
+	deep        bool
 }
 
 func (c *SyncManager) getDomainAlias(host string) string {
@@ -60,6 +61,12 @@ func (c *SyncManager) getDomainAlias(host string) string {
 }
 
 type Option func(*SyncManager)
+
+func WithDeep(deep bool) Option {
+	return func(c *SyncManager) {
+		c.deep = deep
+	}
+}
 
 func WithDomainAlias(domainAlias map[string]string) Option {
 	return func(c *SyncManager) {
@@ -243,15 +250,16 @@ func (c *SyncManager) Image(ctx context.Context, image string, filter func(pf ma
 		return nil
 	}
 
+	ts := repo.Tags(ctx)
+
 	switch ref.(type) {
 	case reference.Digested, reference.Tagged:
-		err = c.syncLayerFromManifestList(ctx, ms, ref, filter, blobCallback, manifestCallback, host+"/"+ref.String())
+		err = c.syncLayerFromManifestList(ctx, ms, ts, ref, filter, blobCallback, manifestCallback, host+"/"+ref.String())
 		if err != nil {
 			return fmt.Errorf("sync layer from manifest list failed: %w", err)
 		}
 	default:
-		t := repo.Tags(ctx)
-		tags, err := t.All(ctx)
+		tags, err := ts.All(ctx)
 		if err != nil {
 			return fmt.Errorf("get tags failed: %w", err)
 		}
@@ -261,7 +269,7 @@ func (c *SyncManager) Image(ctx context.Context, image string, filter func(pf ma
 			if err != nil {
 				return fmt.Errorf("with tag failed: %w", err)
 			}
-			err = c.syncLayerFromManifestList(ctx, ms, t, filter, blobCallback, manifestCallback, host+"/"+t.String())
+			err = c.syncLayerFromManifestList(ctx, ms, ts, t, filter, blobCallback, manifestCallback, host+"/"+t.String())
 			if err != nil {
 				return fmt.Errorf("sync layer from manifest list failed: %w", err)
 			}
@@ -271,28 +279,49 @@ func (c *SyncManager) Image(ctx context.Context, image string, filter func(pf ma
 	return nil
 }
 
-func (c *SyncManager) syncLayerFromManifestList(ctx context.Context, ms distribution.ManifestService, ref reference.Reference, filter func(pf manifestlist.PlatformSpec) bool,
+func (c *SyncManager) syncLayerFromManifestList(ctx context.Context, ms distribution.ManifestService, ts distribution.TagService, ref reference.Reference, filter func(pf manifestlist.PlatformSpec) bool,
 	digestCallback func(dgst digest.Digest, size int64, pf *manifestlist.PlatformSpec, name string) error,
 	manifestCallback func(tagOrHash string, m distribution.Manifest) error, name string) error {
+
 	var (
 		m   distribution.Manifest
 		err error
 	)
+
+	var hash digest.Digest
 	switch r := ref.(type) {
 	case reference.Digested:
-		m, err = ms.Get(ctx, r.Digest())
+		hash = r.Digest()
+		if !c.deep {
+			stat, err := c.cache.StatBlob(ctx, hash.String())
+			if err == nil && stat.Size() > 0 {
+				return nil
+			}
+		}
+		m, err = ms.Get(ctx, hash)
 		if err != nil {
 			return fmt.Errorf("get manifest digest failed: %w", err)
 		}
-		err = manifestCallback(r.Digest().String(), m)
+		err = manifestCallback(hash.String(), m)
 		if err != nil {
 			return fmt.Errorf("manifest callback failed: %w", err)
 		}
 	case reference.Tagged:
 		tag := r.Tag()
-		m, err = ms.Get(ctx, "", distribution.WithTag(tag))
+		desc, err := ts.Get(ctx, tag)
 		if err != nil {
-			return fmt.Errorf("get manifest tag failed: %w", err)
+			return fmt.Errorf("get tag failed: %w", err)
+		}
+		hash = desc.Digest
+		if !c.deep {
+			stat, err := c.cache.StatBlob(ctx, hash.String())
+			if err == nil && stat.Size() == desc.Size {
+				return nil
+			}
+		}
+		m, err = ms.Get(ctx, hash)
+		if err != nil {
+			return fmt.Errorf("get manifest digest failed: %w", err)
 		}
 		err = manifestCallback(tag, m)
 		if err != nil {
