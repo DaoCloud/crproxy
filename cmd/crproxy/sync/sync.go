@@ -19,6 +19,7 @@ import (
 type flagpole struct {
 	StorageDriver     string
 	StorageParameters map[string]string
+	Deep              bool
 	List              []string
 	ListFromFile      string
 	Platform          []string
@@ -45,6 +46,7 @@ func NewCommand() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&flags.StorageDriver, "storage-driver", flags.StorageDriver, "Storage driver")
 	cmd.Flags().StringToStringVar(&flags.StorageParameters, "storage-parameters", flags.StorageParameters, "Storage parameters")
+	cmd.Flags().BoolVar(&flags.Deep, "deep", flags.Deep, "Deep sync")
 	cmd.Flags().StringSliceVar(&flags.List, "list", flags.List, "List")
 	cmd.Flags().StringVar(&flags.ListFromFile, "list-from-file", flags.ListFromFile, "List from file")
 	cmd.Flags().StringSliceVar(&flags.Platform, "platform", flags.Platform, "Platform")
@@ -101,6 +103,7 @@ func runE(ctx context.Context, flags *flagpole) error {
 			"docker.io": "registry-1.docker.io",
 			"ollama.ai": "registry.ollama.ai",
 		}),
+		csync.WithDeep(flags.Deep),
 		csync.WithClient(client),
 		csync.WithLogger(logger),
 	)
