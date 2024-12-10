@@ -4,11 +4,11 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"regexp"
 	"strings"
 
 	"github.com/daocloud/crproxy/cache"
-	"github.com/daocloud/crproxy/clientset"
 	"github.com/distribution/reference"
 	"github.com/docker/distribution"
 	"github.com/docker/distribution/manifest/manifestlist"
@@ -36,7 +36,7 @@ func newNameWithoutDomain(named reference.Named, name string) reference.Named {
 }
 
 type SyncManager struct {
-	client      *clientset.Clientset
+	transport   http.RoundTripper
 	cache       *cache.Cache
 	logger      *slog.Logger
 	domainAlias map[string]string
@@ -82,9 +82,9 @@ func WithCache(cache *cache.Cache) Option {
 	}
 }
 
-func WithClient(client *clientset.Clientset) Option {
+func WithTransport(transport http.RoundTripper) Option {
 	return func(c *SyncManager) {
-		c.client = client
+		c.transport = transport
 	}
 }
 
@@ -96,13 +96,11 @@ func WithFilterPlatform(filterPlatform func(pf manifestlist.PlatformSpec) bool) 
 
 func NewSyncManager(opts ...Option) (*SyncManager, error) {
 	c := &SyncManager{
-		logger: slog.Default(),
+		logger:    slog.Default(),
+		transport: http.DefaultTransport,
 	}
 	for _, opt := range opts {
 		opt(c)
-	}
-	if c.client == nil {
-		return nil, fmt.Errorf("client is required")
 	}
 
 	if c.cache == nil {
@@ -140,14 +138,7 @@ func (c *SyncManager) Image(ctx context.Context, image string) error {
 
 	name := newNameWithoutDomain(named, path)
 
-	err = c.client.Ping(host)
-	if err != nil {
-		return fmt.Errorf("ping registry failed: %w", err)
-	}
-
-	cli := c.client.GetClientset(host, path)
-
-	repo, err := client.NewRepository(name, c.client.HostURL(host), cli.Transport)
+	repo, err := client.NewRepository(name, "https://"+host, c.transport)
 	if err != nil {
 		return fmt.Errorf("create repository failed: %w", err)
 	}

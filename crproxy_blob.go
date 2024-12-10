@@ -108,8 +108,7 @@ func (c *CRProxy) cacheBlobResponse(rw http.ResponseWriter, r *http.Request, inf
 }
 
 func (c *CRProxy) cacheBlobContent(ctx context.Context, r *http.Request, info *PathInfo) (int64, error) {
-	cli := c.client.GetClientset(info.Host, info.Image)
-	resp, err := c.client.DoWithAuth(cli, r.WithContext(ctx), info.Host)
+	resp, err := c.httpClient.Do(r)
 	if err != nil {
 		return 0, err
 	}
@@ -132,8 +131,7 @@ func (c *CRProxy) cacheBlobContent(ctx context.Context, r *http.Request, info *P
 func (c *CRProxy) redirectBlobResponse(rw http.ResponseWriter, r *http.Request, info *PathInfo) {
 	r = r.WithContext(withCtxValue(r.Context()))
 
-	cli := c.client.GetClientset(info.Host, info.Image)
-	resp, err := c.client.DoWithAuth(cli, r, info.Host)
+	resp, err := c.httpClient.Do(r)
 	if err != nil {
 		c.logger.Error("failed to request", "host", info.Host, "image", info.Image, "error", err)
 		errcode.ServeJSON(rw, errcode.ErrorCodeUnknown)
@@ -156,7 +154,7 @@ func (c *CRProxy) redirectBlobResponse(rw http.ResponseWriter, r *http.Request, 
 		http.Redirect(rw, r, location, http.StatusFound)
 		return
 	case http.StatusOK:
-		v := GetCtxValue(r.Context())
+		v := getCtxValue(r.Context())
 		if v != nil && v.LastRedirect != "" {
 			http.Redirect(rw, r, v.LastRedirect, http.StatusFound)
 			return

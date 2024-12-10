@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/rsa"
 	"encoding/csv"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -20,13 +21,14 @@ import (
 	"time"
 
 	"github.com/daocloud/crproxy/cache"
-	"github.com/daocloud/crproxy/clientset"
 	csync "github.com/daocloud/crproxy/cmd/crproxy/sync"
+	"github.com/daocloud/crproxy/transport"
 	"github.com/docker/distribution/registry/storage/driver/factory"
 	"github.com/gorilla/handlers"
 	"github.com/spf13/cobra"
 	"github.com/wzshiming/geario"
 	"github.com/wzshiming/hostmatcher"
+	"github.com/wzshiming/httpseek"
 
 	_ "github.com/daocloud/crproxy/storage/driver/obs"
 	_ "github.com/daocloud/crproxy/storage/driver/oss"
@@ -167,31 +169,9 @@ func run(ctx context.Context) {
 	logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
 
 	mux := http.NewServeMux()
-	cli := &http.Client{
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if len(via) > 10 {
-				return http.ErrUseLastResponse
-			}
-			s := make([]string, 0, len(via)+1)
-			for _, v := range via {
-				s = append(s, v.URL.String())
-			}
 
-			lastRedirect := req.URL.String()
-			s = append(s, lastRedirect)
-			logger.Info("redirect", "redirects", s)
-
-			if v := crproxy.GetCtxValue(req.Context()); v != nil {
-				v.LastRedirect = lastRedirect
-			}
-			return nil
-		},
-	}
-	clientOpts := []clientset.Option{
-		clientset.WithLogger(logger),
-		clientset.WithBaseClient(cli),
-		clientset.WithMaxClientSizeForEachRegistry(16),
-		clientset.WithDisableKeepAlives(disableKeepAlives),
+	transportOpts := []transport.Option{
+		transport.WithLogger(logger),
 	}
 
 	opts := []crproxy.Option{
@@ -426,12 +406,7 @@ func run(ctx context.Context) {
 	}
 
 	if len(userpass) != 0 {
-		bc, err := clientset.ToUserAndPass(userpass)
-		if err != nil {
-			logger.Error("failed to toUserAndPass", "error", err)
-			os.Exit(1)
-		}
-		clientOpts = append(clientOpts, clientset.WithUserAndPass(bc))
+		transportOpts = append(transportOpts, transport.WithUserAndPass(userpass))
 	}
 
 	if ipsSpeedLimit != "" {
@@ -465,9 +440,6 @@ func run(ctx context.Context) {
 		opts = append(opts, crproxy.WithDisableTagsList(true))
 	}
 
-	if retry > 0 {
-		clientOpts = append(clientOpts, clientset.WithRetry(retry, retryInterval))
-	}
 	if limitDelay {
 		opts = append(opts, crproxy.WithLimitDelay(true))
 	}
@@ -565,20 +537,32 @@ func run(ctx context.Context) {
 		}))
 	}
 
-	if allowHeadMethod {
-		clientOpts = append(clientOpts, clientset.WithAllowHeadMethod(allowHeadMethod))
-	}
-
 	if manifestCacheDuration != 0 {
 		opts = append(opts, crproxy.WithManifestCacheDuration(manifestCacheDuration))
 	}
 
-	clientset, err := clientset.NewClientset(clientOpts...)
+	transport, err := transport.NewTransport(transportOpts...)
 	if err != nil {
-		logger.Error("failed to NewClientset", "error", err)
+		logger.Error("failed to NewTransport", "error", err)
 		os.Exit(1)
 	}
-	opts = append(opts, crproxy.WithClient(clientset))
+
+	if retry > 0 && retryInterval > 0 {
+		transport = httpseek.NewMustReaderTransport(transport, func(request *http.Request, r int, err error) error {
+			if errors.Is(err, context.Canceled) ||
+				errors.Is(err, context.DeadlineExceeded) {
+				return err
+			}
+			if retry > 0 && r >= retry {
+				return err
+			}
+			logger.Info("Retry", "url", request.URL, "retry", retry, "error", err)
+			time.Sleep(retryInterval)
+			return nil
+		})
+	}
+
+	opts = append(opts, crproxy.WithTransport(transport))
 
 	crp, err := crproxy.NewCRProxy(opts...)
 	if err != nil {
