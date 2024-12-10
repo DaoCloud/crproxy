@@ -405,7 +405,7 @@ func (c *CRProxy) directResponse(rw http.ResponseWriter, r *http.Request, info *
 
 	switch resp.StatusCode {
 	case http.StatusUnauthorized, http.StatusForbidden:
-		c.logger.Warn("origin direct response 40x, but hit caches", "host", info.Host, "image", info.Image, "error", err, "response", dumpResponse(resp))
+		c.logger.Warn("origin direct response 40x", "host", info.Host, "image", info.Image, "response", dumpResponse(resp))
 		errcode.ServeJSON(rw, errcode.ErrorCodeDenied)
 		return
 	}
