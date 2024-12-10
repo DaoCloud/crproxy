@@ -20,8 +20,8 @@ import (
 	"time"
 
 	"github.com/daocloud/crproxy/cache"
-	"github.com/daocloud/crproxy/clientset"
 	csync "github.com/daocloud/crproxy/cmd/crproxy/sync"
+	"github.com/daocloud/crproxy/transport"
 	"github.com/docker/distribution/registry/storage/driver/factory"
 	"github.com/gorilla/handlers"
 	"github.com/spf13/cobra"
@@ -167,31 +167,10 @@ func run(ctx context.Context) {
 	logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
 
 	mux := http.NewServeMux()
-	cli := &http.Client{
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if len(via) > 10 {
-				return http.ErrUseLastResponse
-			}
-			s := make([]string, 0, len(via)+1)
-			for _, v := range via {
-				s = append(s, v.URL.String())
-			}
 
-			lastRedirect := req.URL.String()
-			s = append(s, lastRedirect)
-			logger.Info("redirect", "redirects", s)
-
-			if v := crproxy.GetCtxValue(req.Context()); v != nil {
-				v.LastRedirect = lastRedirect
-			}
-			return nil
-		},
-	}
-	clientOpts := []clientset.Option{
-		clientset.WithLogger(logger),
-		clientset.WithBaseClient(cli),
-		clientset.WithMaxClientSizeForEachRegistry(16),
-		clientset.WithDisableKeepAlives(disableKeepAlives),
+	transportOpts := []transport.Option{
+		transport.WithLogger(logger),
+		transport.WithDisableKeepAlives(disableKeepAlives),
 	}
 
 	opts := []crproxy.Option{
@@ -426,12 +405,12 @@ func run(ctx context.Context) {
 	}
 
 	if len(userpass) != 0 {
-		bc, err := clientset.ToUserAndPass(userpass)
+		bc, err := transport.ToUserAndPass(userpass)
 		if err != nil {
 			logger.Error("failed to toUserAndPass", "error", err)
 			os.Exit(1)
 		}
-		clientOpts = append(clientOpts, clientset.WithUserAndPass(bc))
+		transportOpts = append(transportOpts, transport.WithUserAndPass(bc))
 	}
 
 	if ipsSpeedLimit != "" {
@@ -466,7 +445,7 @@ func run(ctx context.Context) {
 	}
 
 	if retry > 0 {
-		clientOpts = append(clientOpts, clientset.WithRetry(retry, retryInterval))
+		transportOpts = append(transportOpts, transport.WithRetry(retry, retryInterval))
 	}
 	if limitDelay {
 		opts = append(opts, crproxy.WithLimitDelay(true))
@@ -565,20 +544,17 @@ func run(ctx context.Context) {
 		}))
 	}
 
-	if allowHeadMethod {
-		clientOpts = append(clientOpts, clientset.WithAllowHeadMethod(allowHeadMethod))
-	}
-
 	if manifestCacheDuration != 0 {
 		opts = append(opts, crproxy.WithManifestCacheDuration(manifestCacheDuration))
 	}
 
-	clientset, err := clientset.NewClientset(clientOpts...)
+	transport, err := transport.NewTransport(transportOpts...)
 	if err != nil {
-		logger.Error("failed to NewClientset", "error", err)
+		logger.Error("failed to NewTransport", "error", err)
 		os.Exit(1)
 	}
-	opts = append(opts, crproxy.WithClient(clientset))
+
+	opts = append(opts, crproxy.WithTransport(transport))
 
 	crp, err := crproxy.NewCRProxy(opts...)
 	if err != nil {
