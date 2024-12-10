@@ -5,16 +5,16 @@ import (
 )
 
 type infoCtxKey struct{}
-type InfoCtxValue struct {
+type infoCtxValue struct {
 	LastRedirect string
 }
 
 func withCtxValue(ctx context.Context) context.Context {
-	return context.WithValue(ctx, infoCtxKey{}, &InfoCtxValue{})
+	return context.WithValue(ctx, infoCtxKey{}, &infoCtxValue{})
 }
 
-func GetCtxValue(ctx context.Context) *InfoCtxValue {
-	v, ok := ctx.Value(infoCtxKey{}).(*InfoCtxValue)
+func getCtxValue(ctx context.Context) *infoCtxValue {
+	v, ok := ctx.Value(infoCtxKey{}).(*infoCtxValue)
 	if !ok {
 		return nil
 	}

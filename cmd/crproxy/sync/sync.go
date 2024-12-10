@@ -9,8 +9,8 @@ import (
 	"strings"
 
 	"github.com/daocloud/crproxy/cache"
-	"github.com/daocloud/crproxy/clientset"
 	csync "github.com/daocloud/crproxy/sync"
+	"github.com/daocloud/crproxy/transport"
 	"github.com/docker/distribution/manifest/manifestlist"
 	"github.com/docker/distribution/registry/storage/driver/factory"
 	"github.com/spf13/cobra"
@@ -78,22 +78,17 @@ func runE(ctx context.Context, flags *flagpole) error {
 		return fmt.Errorf("create cache failed: %w", err)
 	}
 
-	clientOpts := []clientset.Option{
-		clientset.WithLogger(logger),
-		clientset.WithMaxClientSizeForEachRegistry(16),
+	transportOpts := []transport.Option{
+		transport.WithLogger(logger),
 	}
 
 	if len(flags.Userpass) != 0 {
-		bc, err := clientset.ToUserAndPass(flags.Userpass)
-		if err != nil {
-			return fmt.Errorf("failed to toUserAndPass: %w", err)
-		}
-		clientOpts = append(clientOpts, clientset.WithUserAndPass(bc))
+		transportOpts = append(transportOpts, transport.WithUserAndPass(flags.Userpass))
 	}
 
-	client, err := clientset.NewClientset(clientOpts...)
+	tp, err := transport.NewTransport(transportOpts...)
 	if err != nil {
-		return fmt.Errorf("create clientset failed: %w", err)
+		return fmt.Errorf("create transport failed: %w", err)
 	}
 
 	opts = append(opts,
@@ -103,7 +98,7 @@ func runE(ctx context.Context, flags *flagpole) error {
 			"ollama.ai": "registry.ollama.ai",
 		}),
 		csync.WithDeep(flags.Deep),
-		csync.WithClient(client),
+		csync.WithTransport(tp),
 		csync.WithLogger(logger),
 		csync.WithFilterPlatform(filterPlatform(flags.Platform)),
 	)
