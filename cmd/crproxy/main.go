@@ -21,9 +21,10 @@ import (
 
 	"github.com/daocloud/crproxy/cache"
 	"github.com/daocloud/crproxy/clientset"
+	csync "github.com/daocloud/crproxy/cmd/crproxy/sync"
 	"github.com/docker/distribution/registry/storage/driver/factory"
 	"github.com/gorilla/handlers"
-	"github.com/spf13/pflag"
+	"github.com/spf13/cobra"
 	"github.com/wzshiming/geario"
 	"github.com/wzshiming/hostmatcher"
 
@@ -139,34 +140,30 @@ func init() {
 
 	pflag.StringVar(&tokenPrivateKeyFile, "token-private-key-file", "", "private key file")
 	pflag.StringVar(&tokenPublicKeyFile, "token-public-key-file", "", "public key file")
-	pflag.Parse()
+
+	cmd.AddCommand(csync.NewCommand())
 }
 
-func toUserAndPass(userpass []string) (map[string]clientset.Userpass, error) {
-	bc := map[string]clientset.Userpass{}
-	for _, up := range userpass {
-		s := strings.SplitN(up, "@", 3)
-		if len(s) != 2 {
-			return nil, fmt.Errorf("invalid userpass %q", up)
-		}
-
-		u := strings.SplitN(s[0], ":", 3)
-		if len(s) != 2 {
-			return nil, fmt.Errorf("invalid userpass %q", up)
-		}
-		host := s[1]
-		user := u[0]
-		pwd := u[1]
-		bc[host] = clientset.Userpass{
-			Username: user,
-			Password: pwd,
-		}
+var (
+	cmd = &cobra.Command{
+		Use:   "crproxy",
+		Short: "crproxy",
+		Run: func(cmd *cobra.Command, args []string) {
+			run(cmd.Context())
+		},
 	}
-	return bc, nil
-}
+	pflag = cmd.Flags()
+)
 
 func main() {
-	ctx := context.Background()
+	err := cmd.Execute()
+	if err != nil {
+		slog.Error("execute failed", "error", err)
+		os.Exit(1)
+	}
+}
+
+func run(ctx context.Context) {
 	logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
 
 	mux := http.NewServeMux()
@@ -429,7 +426,7 @@ func main() {
 	}
 
 	if len(userpass) != 0 {
-		bc, err := toUserAndPass(userpass)
+		bc, err := clientset.ToUserAndPass(userpass)
 		if err != nil {
 			logger.Error("failed to toUserAndPass", "error", err)
 			os.Exit(1)
@@ -590,10 +587,6 @@ func main() {
 	}
 
 	mux.Handle("/v2/", crp)
-
-	if enableInternalAPI {
-		mux.HandleFunc("/internal/api/image/sync", crp.Sync)
-	}
 
 	if enablePprof {
 		mux.HandleFunc("/debug/pprof/", pprof.Index)
