@@ -7,12 +7,12 @@ import (
 	"net"
 	"net/http"
 	"net/textproto"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/daocloud/crproxy/cache"
-	"github.com/daocloud/crproxy/clientset"
 	"github.com/daocloud/crproxy/internal/maps"
 	"github.com/daocloud/crproxy/token"
 	"github.com/docker/distribution/registry/api/errcode"
@@ -36,7 +36,7 @@ type BlockInfo struct {
 }
 
 type CRProxy struct {
-	client                   *clientset.Clientset
+	httpClient               *http.Client
 	modify                   func(info *ImageInfo) *ImageInfo
 	domainAlias              map[string]string
 	bytesPool                sync.Pool
@@ -65,9 +65,29 @@ type CRProxy struct {
 
 type Option func(c *CRProxy)
 
-func WithClient(client *clientset.Clientset) Option {
+func WithTransport(transport http.RoundTripper) Option {
 	return func(c *CRProxy) {
-		c.client = client
+		cli := &http.Client{
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				if len(via) > 10 {
+					return http.ErrUseLastResponse
+				}
+				s := make([]string, 0, len(via)+1)
+				for _, v := range via {
+					s = append(s, v.URL.String())
+				}
+
+				lastRedirect := req.URL.String()
+				s = append(s, lastRedirect)
+
+				if v := GetCtxValue(req.Context()); v != nil {
+					v.LastRedirect = lastRedirect
+				}
+				return nil
+			},
+			Transport: transport,
+		}
+		c.httpClient = cli
 	}
 }
 
@@ -358,14 +378,20 @@ func (c *CRProxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		errcode.ServeJSON(rw, errcode.ErrorCodeUnknown)
 		return
 	}
-	r.RequestURI = ""
-	r.Host = info.Host
-	r.URL.Host = info.Host
-	r.URL.Scheme = c.client.GetScheme(info.Host)
-	r.URL.Path = path
-	r.URL.RawQuery = ""
-	r.URL.ForceQuery = false
-	r.Body = http.NoBody
+
+	u := url.URL{
+		Scheme: "https",
+		Host:   info.Host,
+		Path:   path,
+	}
+
+	r, err = http.NewRequestWithContext(r.Context(), r.Method, u.String(), nil)
+	if err != nil {
+		c.logger.Warn("failed to new request", "error", err)
+		errcode.ServeJSON(rw, errcode.ErrorCodeUnknown)
+		return
+	}
+
 	if info.Blobs != "" && c.isRedirectToOriginBlob(r, imageInfo) {
 		c.redirectBlobResponse(rw, r, info)
 		return
@@ -392,8 +418,7 @@ func (c *CRProxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 }
 
 func (c *CRProxy) directResponse(rw http.ResponseWriter, r *http.Request, info *PathInfo, t *token.Token) {
-	cli := c.client.GetClientset(info.Host, info.Image)
-	resp, err := c.client.DoWithAuth(cli, r, info.Host)
+	resp, err := c.httpClient.Do(r)
 	if err != nil {
 		c.logger.Warn("failed to request", "host", info.Host, "image", info.Image, "error", err)
 		errcode.ServeJSON(rw, errcode.ErrorCodeUnknown)
