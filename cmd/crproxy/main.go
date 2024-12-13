@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/daocloud/crproxy/cache"
+	"github.com/daocloud/crproxy/cmd/crproxy/cluster"
 	csync "github.com/daocloud/crproxy/cmd/crproxy/sync"
 	"github.com/daocloud/crproxy/transport"
 	"github.com/docker/distribution/registry/storage/driver/factory"
@@ -144,6 +145,7 @@ func init() {
 	pflag.StringVar(&tokenPublicKeyFile, "token-public-key-file", "", "public key file")
 
 	cmd.AddCommand(csync.NewCommand())
+	cmd.AddCommand(cluster.NewCommand())
 }
 
 var (
@@ -452,10 +454,10 @@ func run(ctx context.Context) {
 		opts = append(opts, crproxy.WithOverrideDefaultRegistry(overrideDefaultRegistry))
 	}
 
-	var auth func(r *http.Request, userinfo *url.Userinfo) (token.Attribute, bool)
+	var authFunc func(r *http.Request, userinfo *url.Userinfo, t *token.Token) (token.Attribute, bool)
 
 	if len(simpleAuthUserpass) != 0 {
-		auth = func(r *http.Request, userinfo *url.Userinfo) (token.Attribute, bool) {
+		authFunc = func(r *http.Request, userinfo *url.Userinfo, t *token.Token) (token.Attribute, bool) {
 			if userinfo == nil {
 				return token.Attribute{}, simpleAuthAllowAnonymous
 			}
@@ -526,7 +528,7 @@ func run(ctx context.Context) {
 		opts = append(opts, crproxy.WithAuthenticator(authenticator))
 
 		if privateKey != nil {
-			gen := token.NewGenerator(token.NewEncoder(signing.NewSigner(privateKey)), auth, logger)
+			gen := token.NewGenerator(token.NewEncoder(signing.NewSigner(privateKey)), authFunc, logger)
 			mux.Handle("/auth/token", gen)
 		}
 	}

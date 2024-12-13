@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -13,14 +14,14 @@ import (
 )
 
 type Generator struct {
-	authFunc     func(r *http.Request, userinfo *url.Userinfo) (Attribute, bool)
+	authFunc     func(r *http.Request, userinfo *url.Userinfo, t *Token) (Attribute, bool)
 	logger       *slog.Logger
 	tokenEncoder *Encoder
 }
 
 func NewGenerator(
 	tokenEncoder *Encoder,
-	authFunc func(r *http.Request, userinfo *url.Userinfo) (Attribute, bool),
+	authFunc func(r *http.Request, userinfo *url.Userinfo, t *Token) (Attribute, bool),
 	logger *slog.Logger,
 ) *Generator {
 	return &Generator{
@@ -63,6 +64,14 @@ func (g *Generator) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func getIP(str string) string {
+	host, _, err := net.SplitHostPort(str)
+	if err == nil && host != "" {
+		return host
+	}
+	return str
+}
+
 func (g *Generator) getToken(r *http.Request) (*Token, error) {
 	query := r.URL.Query()
 	account := query.Get("account")
@@ -73,6 +82,7 @@ func (g *Generator) getToken(r *http.Request) (*Token, error) {
 		Service: service,
 		Scope:   scope,
 		Account: account,
+		IP:      getIP(r.RemoteAddr),
 	}
 
 	if scope != "" {
@@ -95,7 +105,7 @@ func (g *Generator) getToken(r *http.Request) (*Token, error) {
 
 	authorization := r.Header.Get("Authorization")
 	if authorization == "" {
-		attribute, login := g.authFunc(r, nil)
+		attribute, login := g.authFunc(r, nil, &t)
 		if !login {
 			return nil, errcode.ErrorCodeDenied
 		}
@@ -125,7 +135,7 @@ func (g *Generator) getToken(r *http.Request) (*Token, error) {
 			u = url.User(user)
 		}
 
-		attribute, login := g.authFunc(r, u)
+		attribute, login := g.authFunc(r, u, &t)
 		if !login {
 			g.logger.Error("Login failed user and password", "user", u.Username())
 			return nil, errcode.ErrorCodeDenied
