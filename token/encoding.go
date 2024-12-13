@@ -35,14 +35,23 @@ type Token struct {
 	Account string `json:"account,omitempty"`
 	Image   string `json:"image,omitempty"`
 
+	IP string `json:"ip,omitempty"`
+
 	Attribute `json:"attribute,omitempty"`
 }
 
 type Attribute struct {
-	NoRateLimit   bool `json:"no_rate_limit,omitempty"`
+	NoRateLimit        bool   `json:"no_rate_limit,omitempty"`
+	RateLimitPerSecond uint64 `json:"rate_limit_per_second,omitempty"`
+
 	NoAllowlist   bool `json:"no_allowlist,omitempty"`
 	NoBlock       bool `json:"no_block,omitempty"`
 	AllowTagsList bool `json:"allow_tags_list,omitempty"`
+
+	BlobsURL string `json:"blobs_url,omitempty"`
+
+	Block        bool   `json:"block,omitempty"`
+	BlockMessage string `json:"block_message,omitempty"`
 }
 
 func (p *Encoder) Encode(t Token) (code string, err error) {
