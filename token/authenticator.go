@@ -43,7 +43,10 @@ var ErrNoAuth = fmt.Errorf("no authorization header found")
 func (c *Authenticator) Authorization(r *http.Request) (Token, error) {
 	auth := r.Header.Get("Authorization")
 	if auth == "" {
-		return Token{}, ErrNoAuth
+		auth = r.URL.Query().Get("authorization")
+		if auth == "" {
+			return Token{}, ErrNoAuth
+		}
 	}
 
 	if !strings.HasPrefix(auth, "Bearer ") {
