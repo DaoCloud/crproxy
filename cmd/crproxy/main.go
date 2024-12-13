@@ -21,6 +21,9 @@ import (
 	"time"
 
 	"github.com/daocloud/crproxy/cache"
+	"github.com/daocloud/crproxy/cmd/crproxy/agent"
+	"github.com/daocloud/crproxy/cmd/crproxy/auth"
+	"github.com/daocloud/crproxy/cmd/crproxy/gateway"
 	csync "github.com/daocloud/crproxy/cmd/crproxy/sync"
 	"github.com/daocloud/crproxy/transport"
 	"github.com/docker/distribution/registry/storage/driver/factory"
@@ -144,6 +147,9 @@ func init() {
 	pflag.StringVar(&tokenPublicKeyFile, "token-public-key-file", "", "public key file")
 
 	cmd.AddCommand(csync.NewCommand())
+	cmd.AddCommand(agent.NewCommand())
+	cmd.AddCommand(gateway.NewCommand())
+	cmd.AddCommand(auth.NewCommand())
 }
 
 var (
