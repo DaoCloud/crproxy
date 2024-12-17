@@ -7,16 +7,15 @@ import (
 	"net"
 	"net/http"
 	"net/textproto"
-	"net/url"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/daocloud/crproxy/cache"
 	"github.com/daocloud/crproxy/clientset"
 	"github.com/daocloud/crproxy/internal/maps"
 	"github.com/daocloud/crproxy/token"
 	"github.com/docker/distribution/registry/api/errcode"
-	storagedriver "github.com/docker/distribution/registry/storage/driver"
 	"github.com/wzshiming/geario"
 )
 
@@ -49,10 +48,6 @@ type CRProxy struct {
 	ipsSpeedLimit            *geario.B
 	ipsSpeedLimitDuration    time.Duration
 	blockFunc                []func(*BlockInfo) (string, bool)
-	storageDriver            storagedriver.StorageDriver
-	linkExpires              time.Duration
-	mutCache                 sync.Map
-	redirectLinks            *url.URL
 	limitDelay               bool
 	privilegedNoAuth         bool
 	disableTagsList          bool
@@ -61,7 +56,9 @@ type CRProxy struct {
 	overrideDefaultRegistry  map[string]string
 	privilegedFunc           func(r *http.Request, info *ImageInfo) bool
 	redirectToOriginBlobFunc func(r *http.Request, info *ImageInfo) bool
-	manifestCache            maps.SyncMap[string, time.Time]
+	cache                    *cache.Cache
+	mutCache                 sync.Map
+	manifestCache            maps.SyncMap[cacheKey, time.Time]
 	manifestCacheDuration    time.Duration
 	authenticator            *token.Authenticator
 }
@@ -128,24 +125,6 @@ func WithLimitDelay(b bool) Option {
 	}
 }
 
-func WithLinkExpires(d time.Duration) Option {
-	return func(c *CRProxy) {
-		c.linkExpires = d
-	}
-}
-
-func WithRedirectLinks(l *url.URL) Option {
-	return func(c *CRProxy) {
-		c.redirectLinks = l
-	}
-}
-
-func WithStorageDriver(storageDriver storagedriver.StorageDriver) Option {
-	return func(c *CRProxy) {
-		c.storageDriver = storageDriver
-	}
-}
-
 func WithBlobsSpeedLimit(limit geario.B, duration time.Duration) Option {
 	return func(c *CRProxy) {
 		c.blobsSpeedLimit = &limit
@@ -193,6 +172,12 @@ func WithBlockFunc(blockFunc func(info *BlockInfo) (string, bool)) Option {
 func WithAuthenticator(authenticator *token.Authenticator) Option {
 	return func(c *CRProxy) {
 		c.authenticator = authenticator
+	}
+}
+
+func WithCache(cache *cache.Cache) Option {
+	return func(c *CRProxy) {
+		c.cache = cache
 	}
 }
 
@@ -392,7 +377,7 @@ func (c *CRProxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if c.storageDriver != nil {
+	if c.cache != nil {
 		if info.Blobs != "" {
 			c.cacheBlobResponse(rw, r, info, t)
 			return
@@ -479,38 +464,18 @@ func (c *CRProxy) notFoundResponse(rw http.ResponseWriter, r *http.Request) {
 	http.NotFound(rw, r)
 }
 
-func (c *CRProxy) redirect(rw http.ResponseWriter, r *http.Request, blobPath string, info *PathInfo) error {
-	options := map[string]interface{}{
-		"method": r.Method,
-		"ip":     r.RemoteAddr,
-	}
-	linkExpires := c.linkExpires
-	if linkExpires > 0 {
-		options["expiry"] = time.Now().Add(linkExpires)
-	}
+func (c *CRProxy) redirect(rw http.ResponseWriter, r *http.Request, blob string, info *PathInfo) error {
 
 	referer := r.RemoteAddr
-
 	if info != nil {
 		referer += fmt.Sprintf(":%s/%s", info.Host, info.Image)
 	}
 
-	if referer != "" {
-		options["referer"] = referer
-	}
-	u, err := c.storageDriver.URLFor(r.Context(), blobPath, options)
+	u, err := c.cache.RedirectBlob(r.Context(), blob, referer, r.RemoteAddr)
 	if err != nil {
 		return err
 	}
-	c.logger.Info("Cache hit", "blobPath", blobPath, "url", u)
-	if c.redirectLinks != nil {
-		uri, err := url.Parse(u)
-		if err == nil {
-			uri.Scheme = c.redirectLinks.Scheme
-			uri.Host = c.redirectLinks.Host
-			u = uri.String()
-		}
-	}
+	c.logger.Info("Cache hit", "digest", blob, "url", u)
 	http.Redirect(rw, r, u, http.StatusTemporaryRedirect)
 	return nil
 }
