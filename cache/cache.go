@@ -78,6 +78,19 @@ func (c *Cache) Redirect(ctx context.Context, blobPath string, referer string, i
 	if err != nil {
 		return "", err
 	}
+
+	if c.redirectLinks != nil {
+		link, err := url.Parse(u)
+		if err != nil {
+			return "", err
+		}
+
+		rLink, err := c.redirectLinks.Parse(fmt.Sprintf("%s?%s", link.Path, link.RawQuery))
+		if err != nil {
+			return "", err
+		}
+		u = rLink.String()
+	}
 	return u, nil
 }
 
