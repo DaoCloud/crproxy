@@ -92,7 +92,7 @@ func runE(ctx context.Context, flags *flagpole) error {
 	}
 
 	opts = append(opts,
-		csync.WithCache(cache),
+		csync.WithCaches(cache),
 		csync.WithDomainAlias(map[string]string{
 			"docker.io": "registry-1.docker.io",
 			"ollama.ai": "registry.ollama.ai",
