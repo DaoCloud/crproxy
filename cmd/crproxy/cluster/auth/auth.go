@@ -1,20 +1,25 @@
 package auth
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
+	"crypto/rsa"
+	"database/sql"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
 	"sync/atomic"
+	"time"
+
+	_ "github.com/go-sql-driver/mysql"
 
 	"github.com/daocloud/crproxy/internal/pki"
 	"github.com/daocloud/crproxy/internal/server"
+	"github.com/daocloud/crproxy/manager"
 	"github.com/daocloud/crproxy/signing"
 	"github.com/daocloud/crproxy/token"
+	"github.com/emicklei/go-restful/v3"
 	"github.com/gorilla/handlers"
 	"github.com/spf13/cobra"
 )
@@ -34,10 +39,11 @@ type flagpole struct {
 
 	AllowAnonymous              bool
 	AnonymousRateLimitPerSecond uint64
+	AnonymousNoAllowlist        bool
 
 	BlobsURLs []string
 
-	WebhookURL string
+	DBURL string
 }
 
 func NewCommand() *cobra.Command {
@@ -66,40 +72,68 @@ func NewCommand() *cobra.Command {
 	cmd.Flags().StringToStringVar(&flags.SimpleAuthUserpass, "simple-auth-userpass", flags.SimpleAuthUserpass, "Simple auth userpass")
 
 	cmd.Flags().BoolVar(&flags.AllowAnonymous, "allow-anonymous", flags.AllowAnonymous, "Allow anonymous")
+	cmd.Flags().Uint64Var(&flags.AnonymousRateLimitPerSecond, "anonymous-rate-limit-per-second", flags.AnonymousRateLimitPerSecond, "Rate limit for anonymous users per second")
 
 	cmd.Flags().StringSliceVar(&flags.BlobsURLs, "blobs-url", flags.BlobsURLs, "Blobs urls")
 
-	cmd.Flags().StringVar(&flags.WebhookURL, "webhook-url", flags.WebhookURL, "Webhook url")
+	cmd.Flags().StringVar(&flags.DBURL, "db-url", flags.DBURL, "Database URL")
 
 	return cmd
 }
 
 func runE(ctx context.Context, flags *flagpole) error {
-	mux := http.NewServeMux()
-
 	logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
 
-	privateKeyData, err := os.ReadFile(flags.TokenPrivateKeyFile)
-	if err != nil {
-		logger.Error("failed to ReadFile", "file", flags.TokenPrivateKeyFile, "error", err)
-		os.Exit(1)
-	}
-	privateKey, err := pki.DecodePrivateKey(privateKeyData)
-	if err != nil {
-		logger.Error("failed to DecodePrivateKey", "file", flags.TokenPrivateKeyFile, "error", err)
-		os.Exit(1)
-	}
-
-	if flags.TokenPublicKeyFile != "" {
-		publicKeyData, err := pki.EncodePublicKey(&privateKey.PublicKey)
+	var privateKey *rsa.PrivateKey
+	var err error
+	if flags.TokenPrivateKeyFile != "" {
+		privateKeyData, err := os.ReadFile(flags.TokenPrivateKeyFile)
 		if err != nil {
-			return fmt.Errorf("failed to encode public key: %w", err)
+			return fmt.Errorf("failed to read token private key file: %w", err)
+		}
+		privateKey, err = pki.DecodePrivateKey(privateKeyData)
+		if err != nil {
+			return fmt.Errorf("failed to decode private key: %w", err)
+		}
+		if flags.TokenPublicKeyFile != "" {
+			publicKeyData, err := pki.EncodePublicKey(&privateKey.PublicKey)
+			if err != nil {
+				return fmt.Errorf("failed to encode public key: %w", err)
+			}
+
+			err = os.WriteFile(flags.TokenPublicKeyFile, publicKeyData, 0644)
+			if err != nil {
+				return fmt.Errorf("failed to write token public key file: %w", err)
+			}
 		}
 
-		err = os.WriteFile(flags.TokenPublicKeyFile, publicKeyData, 0644)
+	} else {
+		privateKey, err = pki.GenerateKey()
 		if err != nil {
-			return fmt.Errorf("failed to write token public key file: %w", err)
+			return fmt.Errorf("failed to generate private key: %w", err)
 		}
+	}
+
+	container := restful.NewContainer()
+
+	var mgr *manager.Manager
+	if flags.DBURL != "" {
+		dburl := flags.DBURL
+		db, err := sql.Open("mysql", dburl)
+		if err != nil {
+			return fmt.Errorf("failed to connect to database: %w", err)
+		}
+		defer db.Close()
+
+		if err = db.Ping(); err != nil {
+			return fmt.Errorf("failed to ping database: %w", err)
+		}
+
+		mgr = manager.NewManager(privateKey, db, 1*time.Minute)
+
+		mgr.Register(container)
+
+		mgr.InitTable(ctx)
 	}
 
 	getHosts := getBlobsURLs(flags.BlobsURLs)
@@ -131,35 +165,13 @@ func runE(ctx context.Context, flags *flagpole) error {
 			return token.Attribute{}, false
 		}
 
-		if flags.WebhookURL != "" {
-			body, _ := json.Marshal(t)
-			wu, err := url.Parse(flags.WebhookURL)
+		if mgr != nil {
+			attr, err := mgr.GetToken(r.Context(), userinfo, t)
 			if err != nil {
-				logger.Error("failed to parse webhook url", "url", flags.WebhookURL, "error", err)
+				logger.Info("Failed to retrieve token", "user", userinfo, "err", err)
 				return token.Attribute{}, false
 			}
-			wu.User = userinfo
-
-			resp, err := http.Post(wu.String(), "application/json", bytes.NewBuffer(body))
-			if err != nil {
-				logger.Error("failed to post webhook", "url", flags.WebhookURL, "error", err)
-				return token.Attribute{}, false
-			}
-			defer resp.Body.Close()
-
-			switch resp.StatusCode {
-			case http.StatusOK:
-				err = json.NewDecoder(resp.Body).Decode(&t)
-				if err != nil {
-					logger.Error("failed to decode webhook response", "url", flags.WebhookURL, "error", err)
-					return token.Attribute{}, false
-				}
-			case http.StatusForbidden:
-				return token.Attribute{}, false
-			default:
-				logger.Error("failed to post webhook", "url", flags.WebhookURL, "status", resp.StatusCode)
-				return token.Attribute{}, false
-			}
+			t.Attribute = attr
 		} else {
 			t.NoRateLimit = true
 			t.NoAllowlist = true
@@ -177,9 +189,9 @@ func runE(ctx context.Context, flags *flagpole) error {
 	}
 
 	gen := token.NewGenerator(token.NewEncoder(signing.NewSigner(privateKey)), authFunc, logger)
-	mux.Handle("/auth/token", gen)
+	container.Handle("/auth/token", gen)
 
-	var handler http.Handler = mux
+	var handler http.Handler = container
 	handler = handlers.LoggingHandler(os.Stderr, handler)
 	if flags.Behind {
 		handler = handlers.ProxyHeaders(handler)

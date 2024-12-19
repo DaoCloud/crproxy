@@ -41,6 +41,9 @@ type Token struct {
 }
 
 type Attribute struct {
+	UserID  int64 `json:"user_id,omitempty"`
+	TokenID int64 `json:"token_id,omitempty"`
+
 	NoRateLimit        bool   `json:"no_rate_limit,omitempty"`
 	RateLimitPerSecond uint64 `json:"rate_limit_per_second,omitempty"`
 
