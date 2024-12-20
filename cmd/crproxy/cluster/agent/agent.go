@@ -14,18 +14,17 @@ import (
 	"github.com/daocloud/crproxy/internal/pki"
 	"github.com/daocloud/crproxy/internal/server"
 	"github.com/daocloud/crproxy/signing"
+	"github.com/daocloud/crproxy/storage"
 	"github.com/daocloud/crproxy/token"
 	"github.com/daocloud/crproxy/transport"
-	"github.com/docker/distribution/registry/storage/driver/factory"
 	"github.com/gorilla/handlers"
 	"github.com/spf13/cobra"
 )
 
 type flagpole struct {
-	StorageDriver     string
-	StorageParameters map[string]string
-	RedirectLinks     string
-	LinkExpires       time.Duration
+	StorageURL    string
+	RedirectLinks string
+	LinkExpires   time.Duration
 
 	Userpass      []string
 	Retry         int
@@ -55,8 +54,7 @@ func NewCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&flags.StorageDriver, "storage-driver", flags.StorageDriver, "Storage driver")
-	cmd.Flags().StringToStringVar(&flags.StorageParameters, "storage-parameters", flags.StorageParameters, "Storage parameters")
+	cmd.Flags().StringVar(&flags.StorageURL, "storage-url", flags.StorageURL, "Storage driver url")
 	cmd.Flags().StringVar(&flags.RedirectLinks, "redirect-links", flags.RedirectLinks, "Redirect links")
 	cmd.Flags().DurationVar(&flags.LinkExpires, "link-expires", flags.LinkExpires, "Link expires")
 
@@ -86,11 +84,7 @@ func runE(ctx context.Context, flags *flagpole) error {
 
 	cacheOpts := []cache.Option{}
 
-	parameters := map[string]interface{}{}
-	for k, v := range flags.StorageParameters {
-		parameters[k] = v
-	}
-	sd, err := factory.Create(flags.StorageDriver, parameters)
+	sd, err := storage.NewStorage(flags.StorageURL)
 	if err != nil {
 		return fmt.Errorf("create storage driver failed: %w", err)
 	}
