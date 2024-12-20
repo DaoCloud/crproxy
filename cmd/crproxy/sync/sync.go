@@ -9,22 +9,21 @@ import (
 	"strings"
 
 	"github.com/daocloud/crproxy/cache"
+	"github.com/daocloud/crproxy/storage"
 	csync "github.com/daocloud/crproxy/sync"
 	"github.com/daocloud/crproxy/transport"
 	"github.com/docker/distribution/manifest/manifestlist"
-	"github.com/docker/distribution/registry/storage/driver/factory"
 	"github.com/spf13/cobra"
 )
 
 type flagpole struct {
-	StorageDriver     string
-	StorageParameters map[string]string
-	Deep              bool
-	List              []string
-	ListFromFile      string
-	Platform          []string
-	MaxWarn           int
-	Userpass          []string
+	StorageURL   []string
+	Deep         bool
+	List         []string
+	ListFromFile string
+	Platform     []string
+	MaxWarn      int
+	Userpass     []string
 }
 
 func NewCommand() *cobra.Command {
@@ -44,8 +43,8 @@ func NewCommand() *cobra.Command {
 			return runE(cmd.Context(), flags)
 		},
 	}
-	cmd.Flags().StringVar(&flags.StorageDriver, "storage-driver", flags.StorageDriver, "Storage driver")
-	cmd.Flags().StringToStringVar(&flags.StorageParameters, "storage-parameters", flags.StorageParameters, "Storage parameters")
+
+	cmd.Flags().StringSliceVar(&flags.StorageURL, "storage-url", flags.StorageURL, "Storage driver url")
 	cmd.Flags().BoolVar(&flags.Deep, "deep", flags.Deep, "Deep sync")
 	cmd.Flags().StringSliceVar(&flags.List, "list", flags.List, "List")
 	cmd.Flags().StringVar(&flags.ListFromFile, "list-from-file", flags.ListFromFile, "List from file")
@@ -61,21 +60,19 @@ func runE(ctx context.Context, flags *flagpole) error {
 
 	logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
 
-	cacheOpts := []cache.Option{}
+	var caches []*cache.Cache
+	for _, s := range flags.StorageURL {
+		sd, err := storage.NewStorage(s)
+		if err != nil {
+			return fmt.Errorf("create storage driver failed: %w", err)
+		}
 
-	parameters := map[string]interface{}{}
-	for k, v := range flags.StorageParameters {
-		parameters[k] = v
-	}
-	sd, err := factory.Create(flags.StorageDriver, parameters)
-	if err != nil {
-		return fmt.Errorf("create storage driver failed: %w", err)
-	}
-	cacheOpts = append(cacheOpts, cache.WithStorageDriver(sd))
+		cache, err := cache.NewCache(cache.WithStorageDriver(sd))
+		if err != nil {
+			return fmt.Errorf("create cache failed: %w", err)
+		}
 
-	cache, err := cache.NewCache(cacheOpts...)
-	if err != nil {
-		return fmt.Errorf("create cache failed: %w", err)
+		caches = append(caches, cache)
 	}
 
 	transportOpts := []transport.Option{
@@ -92,7 +89,7 @@ func runE(ctx context.Context, flags *flagpole) error {
 	}
 
 	opts = append(opts,
-		csync.WithCache(cache),
+		csync.WithCaches(caches...),
 		csync.WithDomainAlias(map[string]string{
 			"docker.io": "registry-1.docker.io",
 			"ollama.ai": "registry.ollama.ai",

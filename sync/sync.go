@@ -3,10 +3,12 @@ package crproxy
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"regexp"
 	"strings"
+	"sync"
 
 	"github.com/daocloud/crproxy/cache"
 	"github.com/distribution/reference"
@@ -37,7 +39,7 @@ func newNameWithoutDomain(named reference.Named, name string) reference.Named {
 
 type SyncManager struct {
 	transport   http.RoundTripper
-	cache       *cache.Cache
+	caches      []*cache.Cache
 	logger      *slog.Logger
 	domainAlias map[string]string
 	deep        bool
@@ -76,9 +78,9 @@ func WithLogger(logger *slog.Logger) Option {
 	}
 }
 
-func WithCache(cache *cache.Cache) Option {
+func WithCaches(caches ...*cache.Cache) Option {
 	return func(c *SyncManager) {
-		c.cache = cache
+		c.caches = caches
 	}
 }
 
@@ -103,7 +105,7 @@ func NewSyncManager(opts ...Option) (*SyncManager, error) {
 		opt(c)
 	}
 
-	if c.cache == nil {
+	if len(c.caches) == 0 {
 		return nil, fmt.Errorf("cache is required")
 	}
 
@@ -151,28 +153,35 @@ func (c *SyncManager) Image(ctx context.Context, image string) error {
 	bs := repo.Blobs(ctx)
 
 	uniq := map[digest.Digest]struct{}{}
-	blobCallback := func(dgst digest.Digest, size int64, pf *manifestlist.PlatformSpec, name string) error {
+	blobCallback := func(caches []*cache.Cache, dgst digest.Digest, size int64, pf *manifestlist.PlatformSpec, name string) error {
 		_, ok := uniq[dgst]
 		if ok {
-			c.logger.Debug("skip blob by unique", "image", image, "digest", dgst)
+			c.logger.Info("skip blob by unique", "image", image, "digest", dgst)
 			return nil
 		}
 		uniq[dgst] = struct{}{}
 		blob := dgst.String()
 
-		stat, err := c.cache.StatBlob(ctx, blob)
-		if err == nil {
-			if size > 0 {
-				gotSize := stat.Size()
-				if size == gotSize {
-					c.logger.Debug("skip blob", "image", image, "digest", dgst)
-					return nil
+		var subCaches []*cache.Cache
+		for _, cache := range caches {
+			stat, err := cache.StatBlob(ctx, blob)
+			if err == nil {
+				if size > 0 {
+					gotSize := stat.Size()
+					if size == gotSize {
+						continue
+					}
+					c.logger.Error("size is not meeting expectations", "digest", dgst, "size", size, "gotSize", gotSize)
+				} else {
+					continue
 				}
-				c.logger.Error("size is not meeting expectations", "digest", dgst, "size", size, "gotSize", gotSize)
-			} else {
-				c.logger.Debug("skip blob", "image", image, "digest", dgst)
-				return nil
 			}
+			subCaches = append(subCaches, cache)
+		}
+
+		if len(subCaches) == 0 {
+			c.logger.Info("skip blob by cache", "image", image, "digest", dgst)
+			return nil
 		}
 
 		f, err := bs.Open(ctx, dgst)
@@ -181,24 +190,59 @@ func (c *SyncManager) Image(ctx context.Context, image string) error {
 		}
 		defer f.Close()
 
-		n, err := c.cache.PutBlob(ctx, blob, f)
-		if err != nil {
-			return fmt.Errorf("put blob failed: %w", err)
+		if len(subCaches) == 1 {
+			n, err := subCaches[0].PutBlob(ctx, blob, f)
+			if err != nil {
+				return fmt.Errorf("put blob failed: %w", err)
+			}
+			c.logger.Info("sync blob", "image", image, "digest", dgst, "size", n, "platform", pf, "name", name)
+			return nil
 		}
 
-		c.logger.Info("sync blob", "image", image, "digest", dgst, "size", n, "platform", pf, "name", name)
+		var writers []io.Writer
+		var closers []io.Closer
+		var wg sync.WaitGroup
+
+		for _, ca := range subCaches {
+			pr, pw := io.Pipe()
+			writers = append(writers, pw)
+			closers = append(closers, pw)
+			wg.Add(1)
+			go func(cache *cache.Cache, pr io.Reader) {
+				defer wg.Done()
+				_, err := cache.PutBlob(ctx, blob, pr)
+				if err != nil {
+					c.logger.Error("put blob failed", "image", image, "digest", dgst, "platform", pf, "name", name, "error", err)
+					return
+				}
+			}(ca, pr)
+		}
+
+		n, err := io.Copy(io.MultiWriter(writers...), f)
+		if err != nil {
+			return fmt.Errorf("copy blob failed: %w", err)
+		}
+		for _, c := range closers {
+			c.Close()
+		}
+
+		wg.Wait()
+
+		c.logger.Info("sync blob", "image", image, "digest", dgst, "platform", pf, "name", name, "size", n)
 		return nil
 	}
 
-	manifestCallback := func(tagOrHash string, m distribution.Manifest) error {
+	manifestCallback := func(caches []*cache.Cache, tagOrHash string, m distribution.Manifest) error {
 		_, playload, err := m.Payload()
 		if err != nil {
 			return fmt.Errorf("get manifest payload failed: %w", err)
 		}
 
-		_, _, err = c.cache.PutManifestContent(ctx, host, path, tagOrHash, playload)
-		if err != nil {
-			return fmt.Errorf("put manifest content failed: %w", err)
+		for _, cache := range caches {
+			_, _, err = cache.PutManifestContent(ctx, host, path, tagOrHash, playload)
+			if err != nil {
+				return fmt.Errorf("put manifest content failed: %w", err)
+			}
 		}
 		return nil
 	}
@@ -245,22 +289,33 @@ func (c *SyncManager) Image(ctx context.Context, image string) error {
 }
 
 func (c *SyncManager) syncLayerFromManifestList(ctx context.Context, image string, ms distribution.ManifestService, ts distribution.TagService, ref reference.Reference,
-	digestCallback func(dgst digest.Digest, size int64, pf *manifestlist.PlatformSpec, name string) error,
-	manifestCallback func(tagOrHash string, m distribution.Manifest) error, name string) error {
+	digestCallback func(caches []*cache.Cache, dgst digest.Digest, size int64, pf *manifestlist.PlatformSpec, name string) error,
+	manifestCallback func(caches []*cache.Cache, tagOrHash string, m distribution.Manifest) error, name string) error {
 
 	var (
 		m   distribution.Manifest
 		err error
 	)
 
+	var caches []*cache.Cache
+
+	if c.deep {
+		caches = c.caches
+	}
+
 	var hash digest.Digest
 	switch r := ref.(type) {
 	case reference.Digested:
 		hash = r.Digest()
 		if !c.deep {
-			stat, err := c.cache.StatBlob(ctx, hash.String())
-			if err == nil && stat.Size() > 0 {
-				c.logger.Debug("skip manifest by cache", "image", image, "digest", hash)
+			for _, cache := range c.caches {
+				stat, err := cache.StatBlob(ctx, hash.String())
+				if err != nil || stat.Size() == 0 {
+					caches = append(caches, cache)
+				}
+			}
+			if len(caches) == 0 {
+				c.logger.Info("skip manifest by cache", "image", image, "digest", hash)
 				return nil
 			}
 		}
@@ -268,7 +323,7 @@ func (c *SyncManager) syncLayerFromManifestList(ctx context.Context, image strin
 		if err != nil {
 			return fmt.Errorf("get manifest digest failed: %w", err)
 		}
-		err = manifestCallback(hash.String(), m)
+		err = manifestCallback(caches, hash.String(), m)
 		if err != nil {
 			return fmt.Errorf("manifest callback failed: %w", err)
 		}
@@ -280,9 +335,14 @@ func (c *SyncManager) syncLayerFromManifestList(ctx context.Context, image strin
 		}
 		hash = desc.Digest
 		if !c.deep {
-			stat, err := c.cache.StatBlob(ctx, hash.String())
-			if err == nil && stat.Size() == desc.Size {
-				c.logger.Debug("skip manifest by cache", "image", image, "digest", hash, "tag", tag)
+			for _, cache := range c.caches {
+				stat, err := cache.StatBlob(ctx, hash.String())
+				if err != nil || stat.Size() == 0 {
+					caches = append(caches, cache)
+				}
+			}
+			if len(caches) == 0 {
+				c.logger.Info("skip manifest by cache", "image", image, "digest", hash, "tag", tag)
 				return nil
 			}
 		}
@@ -290,7 +350,7 @@ func (c *SyncManager) syncLayerFromManifestList(ctx context.Context, image strin
 		if err != nil {
 			return fmt.Errorf("get manifest digest failed: %w", err)
 		}
-		err = manifestCallback(tag, m)
+		err = manifestCallback(caches, tag, m)
 		if err != nil {
 			return fmt.Errorf("manifest callback failed: %w", err)
 		}
@@ -302,26 +362,38 @@ func (c *SyncManager) syncLayerFromManifestList(ctx context.Context, image strin
 	case *manifestlist.DeserializedManifestList:
 		for _, mfest := range m.ManifestList.Manifests {
 			if c.filterPlatform != nil && !c.filterPlatform(mfest.Platform) {
-				c.logger.Debug("skip manifest by filter platform", "image", image, "digest", mfest.Digest, "platform", mfest.Platform)
+				c.logger.Info("skip manifest by filter platform", "image", image, "digest", mfest.Digest, "platform", mfest.Platform)
 				continue
 			}
+
+			var subCaches []*cache.Cache
 			if !c.deep {
-				stat, err := c.cache.StatBlob(ctx, mfest.Digest.String())
-				if err == nil && stat.Size() == mfest.Size {
+				for _, cache := range caches {
+					stat, err := cache.StatBlob(ctx, mfest.Digest.String())
+					if err == nil && stat.Size() == mfest.Size {
+						continue
+					}
+					subCaches = append(subCaches, cache)
+				}
+
+				if len(subCaches) == 0 {
+					c.logger.Info("skip manifest by cache", "image", image, "digest", mfest.Digest, "platform", mfest.Platform)
 					continue
 				}
+			} else {
+				subCaches = caches
 			}
 
 			m0, err := ms.Get(ctx, mfest.Digest)
 			if err != nil {
 				return fmt.Errorf("get manifest failed: %w", err)
 			}
-			err = manifestCallback(mfest.Digest.String(), m0)
+			err = manifestCallback(subCaches, mfest.Digest.String(), m0)
 			if err != nil {
 				return fmt.Errorf("manifest callback failed: %w", err)
 			}
 			err = c.syncLayerFromManifest(m0, func(dgst digest.Digest, size int64) error {
-				return digestCallback(dgst, size, &mfest.Platform, name)
+				return digestCallback(subCaches, dgst, size, &mfest.Platform, name)
 			})
 			if err != nil {
 				return fmt.Errorf("get layer from manifest failed: %w", err)
@@ -330,7 +402,7 @@ func (c *SyncManager) syncLayerFromManifestList(ctx context.Context, image strin
 		return nil
 	default:
 		return c.syncLayerFromManifest(m, func(dgst digest.Digest, size int64) error {
-			return digestCallback(dgst, size, nil, name)
+			return digestCallback(caches, dgst, size, nil, name)
 		})
 	}
 }
