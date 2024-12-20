@@ -498,7 +498,7 @@ func (c *CRProxy) redirect(rw http.ResponseWriter, r *http.Request, blob string,
 		referer += fmt.Sprintf(":%s/%s", info.Host, info.Image)
 	}
 
-	u, err := c.cache.RedirectBlob(r.Context(), blob, referer, r.RemoteAddr)
+	u, err := c.cache.RedirectBlob(r.Context(), blob, referer)
 	if err != nil {
 		return err
 	}

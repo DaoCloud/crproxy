@@ -515,14 +515,6 @@ func (d *driver) URLFor(ctx context.Context, path string, options map[string]int
 		}
 	}
 
-	ip, ok := options["ip"]
-	if ok {
-		ipString, ok := ip.(string)
-		if ok {
-			q["x-oss-ac-source-ip"] = []string{ipString}
-			q["x-oss-ac-subnet-mask"] = []string{"32"}
-		}
-	}
 	signedURL := d.Bucket.SignedURLWithMethod(methodString, d.ossPath(path), expiresTime, q, nil)
 	return signedURL, nil
 }

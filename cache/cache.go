@@ -57,7 +57,7 @@ func NewCache(opts ...Option) (*Cache, error) {
 	return c, nil
 }
 
-func (c *Cache) Redirect(ctx context.Context, blobPath string, referer string, ip string) (string, error) {
+func (c *Cache) Redirect(ctx context.Context, blobPath string, referer string) (string, error) {
 	options := map[string]interface{}{
 		"method": http.MethodGet,
 	}
@@ -65,10 +65,6 @@ func (c *Cache) Redirect(ctx context.Context, blobPath string, referer string, i
 	linkExpires := c.linkExpires
 	if linkExpires > 0 {
 		options["expiry"] = time.Now().Add(linkExpires)
-	}
-
-	if ip != "" {
-		options["ip"] = ip
 	}
 
 	if referer != "" {

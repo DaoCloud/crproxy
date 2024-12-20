@@ -10,8 +10,8 @@ import (
 	storagedriver "github.com/docker/distribution/registry/storage/driver"
 )
 
-func (c *Cache) RedirectBlob(ctx context.Context, blob string, referer string, ip string) (string, error) {
-	return c.Redirect(ctx, blobCachePath(blob), referer, ip)
+func (c *Cache) RedirectBlob(ctx context.Context, blob string, referer string) (string, error) {
+	return c.Redirect(ctx, blobCachePath(blob), referer)
 }
 
 func (c *Cache) StatBlob(ctx context.Context, blob string) (storagedriver.FileInfo, error) {
