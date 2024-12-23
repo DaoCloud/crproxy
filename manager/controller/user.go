@@ -28,17 +28,28 @@ type UserLoginResponse struct {
 	Token string `json:"token"`
 }
 
+type UserResponse struct {
+	UserID int64 `json:"user_id"`
+}
+
 type UpdateNicknameRequest struct {
 	Nickname string `json:"nickname"`
 }
 
+type UpdatePasswordRequest struct {
+	Account     string `json:"account"`
+	OldPassword string `json:"old_password"`
+	NewPassword string `json:"new_password"`
+}
+
 type UserController struct {
 	key         *rsa.PrivateKey
+	adminToken  string
 	userService *service.UserService
 }
 
-func NewUserController(key *rsa.PrivateKey, userService *service.UserService) *UserController {
-	return &UserController{key: key, userService: userService}
+func NewUserController(key *rsa.PrivateKey, adminToken string, userService *service.UserService) *UserController {
+	return &UserController{key: key, adminToken: adminToken, userService: userService}
 }
 
 func (uc *UserController) RegisterRoutes(ws *restful.WebService) {
@@ -68,27 +79,41 @@ func (uc *UserController) RegisterRoutes(ws *restful.WebService) {
 		Operation("getUser").
 		Produces(restful.MIME_JSON).
 		Consumes(restful.MIME_JSON).
-		Param(ws.HeaderParameter("Authorization", "Bearer <token>")).
 		Writes(UserDetailResponse{}).
 		Returns(http.StatusOK, "User found. Returns the user's ID and nickname.", UserDetailResponse{}).
 		Returns(http.StatusUnauthorized, "Unauthorized access. Please provide a valid token.", Error{}).
 		Returns(http.StatusNotFound, "User with the specified ID does not exist. Please check the ID and try again.", Error{}))
 
 	ws.Route(ws.PUT("/users/nickname").To(uc.UpdateNickname).
-		Doc("Update the nickname of an existing user identified by their unique ID.").
+		Doc("Update the nickname.").
 		Operation("updateNickname").
 		Produces(restful.MIME_JSON).
 		Consumes(restful.MIME_JSON).
-		Param(ws.HeaderParameter("Authorization", "Bearer <token>")).
 		Reads(UpdateNicknameRequest{}).
 		Writes(UserDetailResponse{}).
 		Returns(http.StatusOK, "Nickname updated successfully. Returns the updated user's ID and new nickname.", UserDetailResponse{}).
 		Returns(http.StatusUnauthorized, "Unauthorized access. Please provide a valid token.", Error{}).
 		Returns(http.StatusNotFound, "User with the specified ID does not exist. Please check the ID and try again.", Error{}).
 		Returns(http.StatusBadRequest, "Invalid request format. Ensure that the new nickname is provided and is valid.", Error{}))
+
+	ws.Route(ws.PUT("/users/password").To(uc.UpdatePassword).
+		Doc("Update the user's password.").
+		Operation("updatePassword").
+		Produces(restful.MIME_JSON).
+		Consumes(restful.MIME_JSON).
+		Reads(UpdatePasswordRequest{}).
+		Writes(UserResponse{}).
+		Returns(http.StatusOK, "Password updated successfully.", UserDetailResponse{}).
+		Returns(http.StatusUnauthorized, "Unauthorized access. Please provide a valid token.", Error{}).
+		Returns(http.StatusBadRequest, "Invalid request format. Ensure that the old and new passwords are provided.", Error{}))
 }
 
 func (uc *UserController) Create(req *restful.Request, resp *restful.Response) {
+	if uc.adminToken == "" || uc.adminToken != req.HeaderParameter("Authorization") {
+		unauthorizedResponse(resp)
+		return
+	}
+
 	var userRequest UserRequest
 	err := req.ReadEntity(&userRequest)
 	if err != nil {
@@ -96,7 +121,9 @@ func (uc *UserController) Create(req *restful.Request, resp *restful.Response) {
 		return
 	}
 
-	userID, err := uc.userService.Create(req.Request.Context(), userRequest.Nickname, userRequest.Account, userRequest.Password)
+	pwd := defaultPasswordEncoder.Encrypt(userRequest.Password)
+
+	userID, err := uc.userService.Create(req.Request.Context(), userRequest.Nickname, userRequest.Account, pwd)
 	if err != nil {
 		resp.WriteHeaderAndEntity(http.StatusInternalServerError, Error{Code: "UserCreationError", Message: "Failed to create user: " + err.Error()})
 		return
@@ -119,7 +146,7 @@ func (uc *UserController) GetUserLogin(req *restful.Request, resp *restful.Respo
 		return
 	}
 
-	if login.Password != userRequest.Password {
+	if !defaultPasswordEncoder.Verify(userRequest.Password, login.Password) {
 		resp.WriteHeaderAndEntity(http.StatusForbidden, Error{Code: "InvalidCredentialsError", Message: "Invalid account or password"})
 		return
 	}
@@ -172,4 +199,42 @@ func (uc *UserController) UpdateNickname(req *restful.Request, resp *restful.Res
 	}
 
 	resp.WriteHeaderAndEntity(http.StatusOK, UserDetailResponse{UserID: session.UserID, Nickname: updateRequest.Nickname})
+}
+
+func (uc *UserController) UpdatePassword(req *restful.Request, resp *restful.Response) {
+	session, err := getSession(uc.key, req)
+	if err != nil {
+		unauthorizedResponse(resp)
+		return
+	}
+
+	var updateRequest UpdatePasswordRequest
+	if err := req.ReadEntity(&updateRequest); err != nil {
+		resp.WriteHeaderAndEntity(http.StatusBadRequest, Error{Code: "PasswordUpdateError", Message: "Failed to read password update request: " + err.Error()})
+		return
+	}
+
+	login, err := uc.userService.GetLoginByAccount(req.Request.Context(), updateRequest.Account)
+	if err != nil {
+		resp.WriteHeaderAndEntity(http.StatusForbidden, Error{Code: "LoginNotFoundError", Message: "Login not found for the specified user: " + err.Error()})
+		return
+	}
+
+	if login.UserID != session.UserID {
+		resp.WriteHeaderAndEntity(http.StatusForbidden, Error{Code: "LoginNotFoundError", Message: "Login not found for the specified user: " + err.Error()})
+		return
+	}
+
+	if !defaultPasswordEncoder.Verify(updateRequest.OldPassword, login.Password) {
+		resp.WriteHeaderAndEntity(http.StatusForbidden, Error{Code: "InvalidCredentialsError", Message: "Invalid old password"})
+		return
+	}
+
+	newPwd := defaultPasswordEncoder.Encrypt(updateRequest.NewPassword)
+	if err := uc.userService.UpdatePassword(req.Request.Context(), updateRequest.Account, newPwd); err != nil {
+		resp.WriteHeaderAndEntity(http.StatusInternalServerError, Error{Code: "PasswordUpdateError", Message: "Failed to update password: " + err.Error()})
+		return
+	}
+
+	resp.WriteHeaderAndEntity(http.StatusOK, UserResponse{UserID: session.UserID})
 }

@@ -77,7 +77,42 @@ func (s *UserService) GetLoginByAccount(ctx context.Context, account string) (mo
 	return s.loginDao.GetByAccount(ctx, account)
 }
 
+func (s *UserService) GetLoginByID(ctx context.Context, id int64) (model.Login, error) {
+	ctx = dao.WithDB(ctx, s.db)
+	return s.loginDao.GetByID(ctx, id)
+}
+
 func (s *UserService) UpdateNickname(ctx context.Context, id int64, nickname string) error {
 	ctx = dao.WithDB(ctx, s.db)
 	return s.userDao.UpdateNickname(ctx, id, nickname)
+}
+
+func (s *UserService) UpdatePassword(ctx context.Context, account, newPassword string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+
+	ctx = dao.WithDB(ctx, tx)
+
+	login, err := s.loginDao.GetByAccount(ctx, account)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("account does not exist")
+		}
+		tx.Rollback()
+		return fmt.Errorf("failed to get account: %w", err)
+	}
+	err = s.loginDao.UpdatePassword(ctx, login.LoginID, newPassword)
+	if err != nil {
+		tx.Rollback()
+		return fmt.Errorf("failed to update password: %w", err)
+	}
+
+	err = tx.Commit()
+	if err != nil {
+		return err
+	}
+
+	return nil
 }

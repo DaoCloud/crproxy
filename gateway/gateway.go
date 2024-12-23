@@ -30,17 +30,14 @@ type ImageInfo struct {
 }
 
 type Gateway struct {
-	httpClient              *http.Client
-	modify                  func(info *ImageInfo) *ImageInfo
-	domainAlias             map[string]string
-	logger                  *slog.Logger
-	disableTagsList         bool
-	defaultRegistry         string
-	overrideDefaultRegistry map[string]string
-	cache                   *cache.Cache
-	manifestCache           maps.SyncMap[cacheKey, time.Time]
-	manifestCacheDuration   time.Duration
-	authenticator           *token.Authenticator
+	httpClient            *http.Client
+	modify                func(info *ImageInfo) *ImageInfo
+	logger                *slog.Logger
+	disableTagsList       bool
+	cache                 *cache.Cache
+	manifestCache         maps.SyncMap[cacheKey, time.Time]
+	manifestCacheDuration time.Duration
+	authenticator         *token.Authenticator
 
 	agent *agent.Agent
 }
@@ -59,18 +56,6 @@ func WithManifestCacheDuration(d time.Duration) Option {
 	}
 }
 
-func WithDefaultRegistry(target string) Option {
-	return func(c *Gateway) {
-		c.defaultRegistry = target
-	}
-}
-
-func WithOverrideDefaultRegistry(overrideDefaultRegistry map[string]string) Option {
-	return func(c *Gateway) {
-		c.overrideDefaultRegistry = overrideDefaultRegistry
-	}
-}
-
 func WithDisableTagsList(b bool) Option {
 	return func(c *Gateway) {
 		c.disableTagsList = b
@@ -80,12 +65,6 @@ func WithDisableTagsList(b bool) Option {
 func WithLogger(logger *slog.Logger) Option {
 	return func(c *Gateway) {
 		c.logger = logger
-	}
-}
-
-func WithDomainAlias(domainAlias map[string]string) Option {
-	return func(c *Gateway) {
-		c.domainAlias = domainAlias
 	}
 }
 
@@ -212,17 +191,21 @@ func (c *Gateway) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	defaultRegistry := c.defaultRegistry
-	if c.overrideDefaultRegistry != nil {
-		r, ok := c.overrideDefaultRegistry[r.Host]
-		if ok {
-			defaultRegistry = r
-		}
-	}
-	info, ok := parseOriginPathInfo(oriPath, defaultRegistry)
+	info, ok := parseOriginPathInfo(oriPath)
 	if !ok {
 		errcode.ServeJSON(rw, errcode.ErrorCodeDenied)
 		return
+	}
+
+	if t.Attribute.Host != "" {
+		info.Host = t.Attribute.Host
+	}
+	if info.Host == "" {
+		errcode.ServeJSON(rw, errcode.ErrorCodeDenied)
+		return
+	}
+	if t.Attribute.Image != "" {
+		info.Image = t.Attribute.Image
 	}
 
 	if c.modify != nil {
@@ -238,8 +221,6 @@ func (c *Gateway) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		emptyTagsList(rw, r)
 		return
 	}
-
-	info.Host = c.getDomainAlias(info.Host)
 
 	if info.Blobs != "" {
 		c.blob(rw, r, info, &t, authData)
@@ -329,15 +310,4 @@ func (c *Gateway) errorResponse(rw http.ResponseWriter, r *http.Request, err err
 	}
 
 	errcode.ServeJSON(rw, err)
-}
-
-func (c *Gateway) getDomainAlias(host string) string {
-	if c.domainAlias == nil {
-		return host
-	}
-	h, ok := c.domainAlias[host]
-	if !ok {
-		return host
-	}
-	return h
 }

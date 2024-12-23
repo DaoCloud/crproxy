@@ -41,6 +41,8 @@ type flagpole struct {
 	AnonymousRateLimitPerSecond uint64
 	AnonymousNoAllowlist        bool
 
+	AdminToken string
+
 	BlobsURLs []string
 
 	DBURL string
@@ -73,6 +75,8 @@ func NewCommand() *cobra.Command {
 
 	cmd.Flags().BoolVar(&flags.AllowAnonymous, "allow-anonymous", flags.AllowAnonymous, "Allow anonymous")
 	cmd.Flags().Uint64Var(&flags.AnonymousRateLimitPerSecond, "anonymous-rate-limit-per-second", flags.AnonymousRateLimitPerSecond, "Rate limit for anonymous users per second")
+
+	cmd.Flags().StringVar(&flags.AdminToken, "admin-token", flags.AdminToken, "Admin token")
 
 	cmd.Flags().StringSliceVar(&flags.BlobsURLs, "blobs-url", flags.BlobsURLs, "Blobs urls")
 
@@ -129,7 +133,9 @@ func runE(ctx context.Context, flags *flagpole) error {
 			return fmt.Errorf("failed to ping database: %w", err)
 		}
 
-		mgr = manager.NewManager(privateKey, db, 1*time.Minute)
+		logger.Info("Connected to DB")
+
+		mgr = manager.NewManager(privateKey, flags.AdminToken, db, 1*time.Minute)
 
 		mgr.Register(container)
 
@@ -139,20 +145,8 @@ func runE(ctx context.Context, flags *flagpole) error {
 	getHosts := getBlobsURLs(flags.BlobsURLs)
 
 	authFunc := func(r *http.Request, userinfo *url.Userinfo, t *token.Token) (token.Attribute, bool) {
-		if userinfo == nil {
-			if !flags.AllowAnonymous {
-				return token.Attribute{}, false
-			}
-			t.RateLimitPerSecond = flags.AnonymousRateLimitPerSecond
-
-			if !t.Block {
-				t.BlobsURL = getHosts()
-			}
-			return t.Attribute, true
-		}
-
 		var has bool
-		if flags.SimpleAuthUserpass != nil {
+		if userinfo != nil && flags.SimpleAuthUserpass != nil {
 			pass, ok := flags.SimpleAuthUserpass[userinfo.Username()]
 			if ok {
 				upass, ok := userinfo.Password()
@@ -172,10 +166,21 @@ func runE(ctx context.Context, flags *flagpole) error {
 
 		if !has {
 			if mgr == nil {
+				if userinfo == nil {
+					if !flags.AllowAnonymous {
+						return token.Attribute{}, false
+					}
+					t.RateLimitPerSecond = flags.AnonymousRateLimitPerSecond
+
+					if !t.Block {
+						t.BlobsURL = getHosts()
+					}
+					return t.Attribute, true
+				}
 				return token.Attribute{}, false
 			}
 
-			attr, err := mgr.GetToken(r.Context(), userinfo, t)
+			attr, err := mgr.GetTokenWithUser(r.Context(), userinfo, t)
 			if err != nil {
 				logger.Info("Failed to retrieve token", "user", userinfo, "err", err)
 				return token.Attribute{}, false
@@ -196,10 +201,18 @@ func runE(ctx context.Context, flags *flagpole) error {
 	container.Handle("/auth/token", gen)
 
 	var handler http.Handler = container
+
 	handler = handlers.LoggingHandler(os.Stderr, handler)
+
 	if flags.Behind {
 		handler = handlers.ProxyHeaders(handler)
 	}
+
+	handler = handlers.CORS(
+		handlers.AllowedMethods([]string{http.MethodHead, http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete}),
+		handlers.AllowedHeaders([]string{"Authorization", "Accept", "Content-Type", "Origin"}),
+		handlers.AllowedOrigins([]string{"*"}),
+	)(handler)
 
 	err = server.Run(ctx, flags.Address, handler, flags.AcmeHosts, flags.AcmeCacheDir, flags.CertFile, flags.PrivateKeyFile)
 	if err != nil {

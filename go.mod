@@ -8,6 +8,7 @@ require (
 	github.com/docker/distribution v2.8.2+incompatible
 	github.com/emicklei/go-restful-openapi/v2 v2.11.0
 	github.com/emicklei/go-restful/v3 v3.12.1
+	github.com/go-openapi/spec v0.20.9
 	github.com/go-sql-driver/mysql v1.8.1
 	github.com/google/go-containerregistry v0.20.2
 	github.com/gorilla/handlers v1.5.2
@@ -49,7 +50,6 @@ require (
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/go-openapi/jsonpointer v0.19.5 // indirect
 	github.com/go-openapi/jsonreference v0.20.0 // indirect
-	github.com/go-openapi/spec v0.20.9 // indirect
 	github.com/go-openapi/swag v0.19.15 // indirect
 	github.com/gofrs/uuid v4.0.0+incompatible // indirect
 	github.com/golang-jwt/jwt/v4 v4.5.1 // indirect

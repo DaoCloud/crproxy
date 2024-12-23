@@ -31,13 +31,16 @@ func (c *Gateway) cacheManifestResponse(rw http.ResponseWriter, r *http.Request,
 		errcode.ServeJSON(rw, errcode.ErrorCodeUnknown)
 		return
 	}
+	r.Header = map[string][]string{
+		"Accept": {"application/vnd.docker.distribution.manifest.v1+json,application/vnd.docker.distribution.manifest.v1+prettyjws,application/vnd.docker.distribution.manifest.v2+json,application/vnd.oci.image.manifest.v1+json,application/vnd.docker.distribution.manifest.list.v2+json,application/vnd.oci.image.index.v1+json"},
+	}
 
 	resp, err := c.httpClient.Do(r)
 	if err != nil {
 		if c.fallbackServeCachedManifest(rw, r, info) {
 			return
 		}
-		c.logger.Error("failed to request", "host", info.Host, "image", info.Image, "error", err)
+		c.logger.Error("failed to request", "url", u, "error", err)
 		errcode.ServeJSON(rw, errcode.ErrorCodeUnknown)
 		return
 	}
@@ -48,26 +51,32 @@ func (c *Gateway) cacheManifestResponse(rw http.ResponseWriter, r *http.Request,
 	switch resp.StatusCode {
 	case http.StatusUnauthorized, http.StatusForbidden:
 		if c.fallbackServeCachedManifest(rw, r, info) {
-			c.logger.Error("origin manifest response 40x, but hit caches", "host", info.Host, "image", info.Image, "error", err, "response", dumpResponse(resp))
+			c.logger.Error("origin manifest response 40x, but hit caches", "url", u, "error", err, "response", dumpResponse(resp))
 			return
 		}
-		c.logger.Error("origin manifest response 40x", "host", info.Host, "image", info.Image, "error", err, "response", dumpResponse(resp))
+		c.logger.Error("origin manifest response 40x", "url", u, "error", err, "response", dumpResponse(resp))
 		errcode.ServeJSON(rw, errcode.ErrorCodeDenied)
 		return
 	}
 
 	if resp.StatusCode >= http.StatusBadRequest && resp.StatusCode < http.StatusInternalServerError {
 		if c.fallbackServeCachedManifest(rw, r, info) {
-			c.logger.Error("origin manifest response 4xx, but hit caches", "host", info.Host, "image", info.Image, "error", err, "response", dumpResponse(resp))
+			c.logger.Error("origin manifest response 4xx, but hit caches", "url", u, "error", err, "response", dumpResponse(resp))
 			return
 		}
-		c.logger.Error("origin manifest response 4xx", "host", info.Host, "image", info.Image, "error", err, "response", dumpResponse(resp))
-	} else if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusInternalServerError {
+		c.logger.Error("origin manifest response 4xx", "url", u, "error", err, "response", dumpResponse(resp))
+	} else if resp.StatusCode >= http.StatusInternalServerError {
 		if c.fallbackServeCachedManifest(rw, r, info) {
-			c.logger.Error("origin manifest response 5xx, but hit caches", "host", info.Host, "image", info.Image, "error", err, "response", dumpResponse(resp))
+			c.logger.Error("origin manifest response 5xx, but hit caches", "url", u, "error", err, "response", dumpResponse(resp))
 			return
 		}
-		c.logger.Error("origin manifest response 5xx", "host", info.Host, "image", info.Image, "error", err, "response", dumpResponse(resp))
+		c.logger.Error("origin manifest response 5xx", "url", u, "error", err, "response", dumpResponse(resp))
+	} else if resp.StatusCode < http.StatusOK {
+		if c.fallbackServeCachedManifest(rw, r, info) {
+			c.logger.Error("origin manifest response 1xx, but hit caches", "url", u, "error", err, "response", dumpResponse(resp))
+			return
+		}
+		c.logger.Error("origin manifest response 1xx", "url", u, "error", err, "response", dumpResponse(resp))
 	}
 
 	resp.Header.Del("Docker-Ratelimit-Source")
@@ -84,7 +93,7 @@ func (c *Gateway) cacheManifestResponse(rw http.ResponseWriter, r *http.Request,
 		return
 	}
 
-	if resp.StatusCode >= http.StatusOK || resp.StatusCode < http.StatusMultipleChoices {
+	if resp.StatusCode >= http.StatusOK && resp.StatusCode < http.StatusMultipleChoices {
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
 			c.errorResponse(rw, r, err)
