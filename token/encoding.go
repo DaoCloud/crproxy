@@ -31,18 +31,17 @@ type Token struct {
 	ExpiresAt time.Time `json:"expires_at,omitempty"`
 	Scope     string    `json:"scope,omitempty"`
 	Service   string    `json:"service,omitempty"`
-
-	Account string `json:"account,omitempty"`
-	Image   string `json:"image,omitempty"`
-
-	IP string `json:"ip,omitempty"`
+	Account   string    `json:"account,omitempty"`
+	IP        string    `json:"ip,omitempty"`
+	Image     string    `json:"image,omitempty"`
 
 	Attribute `json:"attribute,omitempty"`
 }
 
 type Attribute struct {
-	UserID  int64 `json:"user_id,omitempty"`
-	TokenID int64 `json:"token_id,omitempty"`
+	UserID     int64 `json:"user_id,omitempty"`
+	RegistryID int64 `json:"registry_id,omitempty"`
+	TokenID    int64 `json:"token_id,omitempty"`
 
 	NoRateLimit        bool   `json:"no_rate_limit,omitempty"`
 	RateLimitPerSecond uint64 `json:"rate_limit_per_second,omitempty"`
@@ -50,6 +49,9 @@ type Attribute struct {
 	NoAllowlist   bool `json:"no_allowlist,omitempty"`
 	NoBlock       bool `json:"no_block,omitempty"`
 	AllowTagsList bool `json:"allow_tags_list,omitempty"`
+
+	Host  string `json:"host,omitempty"`
+	Image string `json:"image,omitempty"`
 
 	BlobsURL string `json:"blobs_url,omitempty"`
 
