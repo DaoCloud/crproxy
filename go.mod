@@ -6,6 +6,8 @@ require (
 	github.com/denverdino/aliyungo v0.0.0
 	github.com/distribution/reference v0.6.0
 	github.com/docker/distribution v2.8.2+incompatible
+	github.com/eko/gocache/lib/v4 v4.1.6
+	github.com/eko/gocache/store/bigcache/v4 v4.2.2
 	github.com/emicklei/go-restful-openapi/v2 v2.11.0
 	github.com/emicklei/go-restful/v3 v3.12.1
 	github.com/go-sql-driver/mysql v1.8.1
@@ -54,6 +56,7 @@ require (
 	github.com/gofrs/uuid v4.0.0+incompatible // indirect
 	github.com/golang-jwt/jwt/v4 v4.5.1 // indirect
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
+	github.com/golang/mock v1.6.0 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/s2a-go v0.1.4 // indirect
 	github.com/google/uuid v1.6.0 // indirect
@@ -79,8 +82,10 @@ require (
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/wzshiming/trie v0.3.1 // indirect
 	go.opencensus.io v0.24.0 // indirect
+	golang.org/x/exp v0.0.0-20240416160154-fe59bbe5cc7f // indirect
 	golang.org/x/net v0.30.0 // indirect
 	golang.org/x/oauth2 v0.23.0 // indirect
+	golang.org/x/sync v0.8.0 // indirect
 	golang.org/x/sys v0.26.0 // indirect
 	golang.org/x/text v0.19.0 // indirect
 	google.golang.org/api v0.126.0 // indirect
