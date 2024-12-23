@@ -22,8 +22,9 @@ CREATE TABLE IF NOT EXISTS tokens (
 	password VARCHAR(255) NOT NULL,
 	data JSON NOT NULL,
     create_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+	update_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     delete_at TIMESTAMP
-);
+) ENGINE=InnoDB AUTO_INCREMENT=10000 CHARSET=utf8mb4;
 `
 
 func (t *Token) InitTable(ctx context.Context) error {
@@ -95,13 +96,13 @@ func (t *Token) GetByUserID(ctx context.Context, userID int64) ([]model.Token, e
 }
 
 const getTokenSQL = `
-SELECT id, user_id, account, data FROM tokens WHERE account = ? AND password = ? AND delete_at IS NULL
+SELECT id, user_id, account, data FROM tokens WHERE user_id = ? AND account = ? AND password = ? AND delete_at IS NULL
 `
 
-func (t *Token) GetByAccount(ctx context.Context, account, password string) (model.Token, error) {
+func (t *Token) GetByAccount(ctx context.Context, userID int64, account, password string) (model.Token, error) {
 	db := GetDB(ctx)
 	var token model.Token
-	err := db.QueryRowContext(ctx, getTokenSQL, account, password).Scan(&token.TokenID, &token.UserID, &token.Account, &token.Data)
+	err := db.QueryRowContext(ctx, getTokenSQL, userID, account, password).Scan(&token.TokenID, &token.UserID, &token.Account, &token.Data)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return model.Token{}, fmt.Errorf("token not found: %w", err)
@@ -112,7 +113,7 @@ func (t *Token) GetByAccount(ctx context.Context, account, password string) (mod
 }
 
 const deleteTokenByIDSQL = `
-UPDATE tokens SET delete_at = NOW(), password = NULL WHERE id = ? AND user_id = ? AND delete_at IS NULL
+UPDATE tokens SET delete_at = NOW() WHERE id = ? AND user_id = ? AND delete_at IS NULL
 `
 
 func (t *Token) DeleteByID(ctx context.Context, tokenID, userID int64) error {

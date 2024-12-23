@@ -34,11 +34,12 @@ type UpdateNicknameRequest struct {
 
 type UserController struct {
 	key         *rsa.PrivateKey
+	adminToken  string
 	userService *service.UserService
 }
 
-func NewUserController(key *rsa.PrivateKey, userService *service.UserService) *UserController {
-	return &UserController{key: key, userService: userService}
+func NewUserController(key *rsa.PrivateKey, adminToken string, userService *service.UserService) *UserController {
+	return &UserController{key: key, adminToken: adminToken, userService: userService}
 }
 
 func (uc *UserController) RegisterRoutes(ws *restful.WebService) {
@@ -68,18 +69,16 @@ func (uc *UserController) RegisterRoutes(ws *restful.WebService) {
 		Operation("getUser").
 		Produces(restful.MIME_JSON).
 		Consumes(restful.MIME_JSON).
-		Param(ws.HeaderParameter("Authorization", "Bearer <token>")).
 		Writes(UserDetailResponse{}).
 		Returns(http.StatusOK, "User found. Returns the user's ID and nickname.", UserDetailResponse{}).
 		Returns(http.StatusUnauthorized, "Unauthorized access. Please provide a valid token.", Error{}).
 		Returns(http.StatusNotFound, "User with the specified ID does not exist. Please check the ID and try again.", Error{}))
 
 	ws.Route(ws.PUT("/users/nickname").To(uc.UpdateNickname).
-		Doc("Update the nickname of an existing user identified by their unique ID.").
+		Doc("Update the nickname.").
 		Operation("updateNickname").
 		Produces(restful.MIME_JSON).
 		Consumes(restful.MIME_JSON).
-		Param(ws.HeaderParameter("Authorization", "Bearer <token>")).
 		Reads(UpdateNicknameRequest{}).
 		Writes(UserDetailResponse{}).
 		Returns(http.StatusOK, "Nickname updated successfully. Returns the updated user's ID and new nickname.", UserDetailResponse{}).
@@ -89,6 +88,11 @@ func (uc *UserController) RegisterRoutes(ws *restful.WebService) {
 }
 
 func (uc *UserController) Create(req *restful.Request, resp *restful.Response) {
+	if uc.adminToken == "" || uc.adminToken != req.HeaderParameter("Authorization") {
+		unauthorizedResponse(resp)
+		return
+	}
+
 	var userRequest UserRequest
 	err := req.ReadEntity(&userRequest)
 	if err != nil {
@@ -96,7 +100,9 @@ func (uc *UserController) Create(req *restful.Request, resp *restful.Response) {
 		return
 	}
 
-	userID, err := uc.userService.Create(req.Request.Context(), userRequest.Nickname, userRequest.Account, userRequest.Password)
+	pwd := defaultPasswordEncoder.Encrypt(userRequest.Password)
+
+	userID, err := uc.userService.Create(req.Request.Context(), userRequest.Nickname, userRequest.Account, pwd)
 	if err != nil {
 		resp.WriteHeaderAndEntity(http.StatusInternalServerError, Error{Code: "UserCreationError", Message: "Failed to create user: " + err.Error()})
 		return
@@ -119,7 +125,7 @@ func (uc *UserController) GetUserLogin(req *restful.Request, resp *restful.Respo
 		return
 	}
 
-	if login.Password != userRequest.Password {
+	if !defaultPasswordEncoder.Verify(userRequest.Password, login.Password) {
 		resp.WriteHeaderAndEntity(http.StatusForbidden, Error{Code: "InvalidCredentialsError", Message: "Invalid account or password"})
 		return
 	}

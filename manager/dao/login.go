@@ -22,8 +22,9 @@ CREATE TABLE IF NOT EXISTS logins (
     account VARCHAR(255) NOT NULL,
     password VARCHAR(255) NOT NULL,
     create_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+	update_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     delete_at TIMESTAMP
-);
+) ENGINE=InnoDB AUTO_INCREMENT=10000 CHARSET=utf8mb4;
 `
 
 func (l *Login) InitTable(ctx context.Context) error {
