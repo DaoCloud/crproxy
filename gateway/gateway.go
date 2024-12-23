@@ -212,17 +212,25 @@ func (c *Gateway) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	defaultRegistry := c.defaultRegistry
-	if c.overrideDefaultRegistry != nil {
-		r, ok := c.overrideDefaultRegistry[r.Host]
-		if ok {
-			defaultRegistry = r
+	defaultRegistry := t.Host
+	if defaultRegistry == "" {
+		defaultRegistry = c.defaultRegistry
+		if c.overrideDefaultRegistry != nil {
+			r, ok := c.overrideDefaultRegistry[r.Host]
+			if ok {
+				defaultRegistry = r
+			}
 		}
 	}
+
 	info, ok := parseOriginPathInfo(oriPath, defaultRegistry)
 	if !ok {
 		errcode.ServeJSON(rw, errcode.ErrorCodeDenied)
 		return
+	}
+
+	if t.Image != "" {
+		info.Image = t.Image
 	}
 
 	if c.modify != nil {
