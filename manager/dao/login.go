@@ -22,8 +22,9 @@ CREATE TABLE IF NOT EXISTS logins (
     account VARCHAR(255) NOT NULL,
     password VARCHAR(255) NOT NULL,
     create_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+	update_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     delete_at TIMESTAMP
-);
+) ENGINE=InnoDB AUTO_INCREMENT=10000 CHARSET=utf8mb4;
 `
 
 func (l *Login) InitTable(ctx context.Context) error {
@@ -92,6 +93,19 @@ func (l *Login) DeleteByID(ctx context.Context, id int64) error {
 	_, err := db.ExecContext(ctx, deleteLoginByID, id)
 	if err != nil {
 		return fmt.Errorf("failed to delete login: %w", err)
+	}
+	return nil
+}
+
+const updatePasswordSQL = `
+UPDATE logins SET password = ? WHERE id = ? AND delete_at IS NULL
+`
+
+func (l *Login) UpdatePassword(ctx context.Context, id int64, newPassword string) error {
+	db := GetDB(ctx)
+	_, err := db.ExecContext(ctx, updatePasswordSQL, newPassword, id)
+	if err != nil {
+		return fmt.Errorf("failed to update password for login id %d: %w", id, err)
 	}
 	return nil
 }

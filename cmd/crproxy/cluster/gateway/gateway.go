@@ -41,9 +41,6 @@ type flagpole struct {
 	TokenPublicKeyFile string
 	TokenURL           string
 
-	DefaultRegistry         string
-	OverrideDefaultRegistry map[string]string
-
 	ReadmeURL string
 }
 
@@ -78,9 +75,6 @@ func NewCommand() *cobra.Command {
 	cmd.Flags().StringVar(&flags.TokenPublicKeyFile, "token-public-key-file", flags.TokenPublicKeyFile, "Token public key file")
 	cmd.Flags().StringVar(&flags.TokenURL, "token-url", flags.TokenURL, "Token url")
 
-	cmd.Flags().StringVar(&flags.DefaultRegistry, "default-registry", flags.DefaultRegistry, "Default registry")
-	cmd.Flags().StringToStringVar(&flags.OverrideDefaultRegistry, "override-default-registry", flags.OverrideDefaultRegistry, "Override default registry")
-
 	cmd.Flags().StringVar(&flags.ReadmeURL, "readme-url", flags.ReadmeURL, "Readme url")
 	return cmd
 }
@@ -94,23 +88,23 @@ func runE(ctx context.Context, flags *flagpole) error {
 
 	opts = append(opts,
 		gateway.WithLogger(logger),
-		gateway.WithDomainAlias(map[string]string{
-			"docker.io": "registry-1.docker.io",
-			"ollama.ai": "registry.ollama.ai",
-		}),
 		gateway.WithPathInfoModifyFunc(func(info *gateway.ImageInfo) *gateway.ImageInfo {
+			if info.Host == "docker.io" {
+				info.Host = "registry-1.docker.io"
+			} else if info.Host == "ollama.ai" {
+				info.Host = "registry.ollama.ai"
+			}
+
 			// docker.io/busybox => docker.io/library/busybox
-			if info.Host == "docker.io" && !strings.Contains(info.Name, "/") {
+			if info.Host == "registry-1.docker.io" && !strings.Contains(info.Name, "/") {
 				info.Name = "library/" + info.Name
 			}
-			if info.Host == "ollama.ai" && !strings.Contains(info.Name, "/") {
+			if info.Host == "registry.ollama.ai" && !strings.Contains(info.Name, "/") {
 				info.Name = "library/" + info.Name
 			}
 			return info
 		}),
 		gateway.WithDisableTagsList(flags.DisableTagsList),
-		gateway.WithDefaultRegistry(flags.DefaultRegistry),
-		gateway.WithOverrideDefaultRegistry(flags.OverrideDefaultRegistry),
 	)
 
 	if flags.StorageURL != "" {

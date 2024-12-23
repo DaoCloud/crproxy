@@ -25,9 +25,9 @@ func (s *TokenService) Create(ctx context.Context, token model.Token) (int64, er
 	return s.tokenDao.Create(ctx, token)
 }
 
-func (s *TokenService) GetByAccount(ctx context.Context, account, password string) (model.Token, error) {
+func (s *TokenService) GetByAccount(ctx context.Context, userID int64, account, password string) (model.Token, error) {
 	ctx = dao.WithDB(ctx, s.db)
-	return s.tokenDao.GetByAccount(ctx, account, password)
+	return s.tokenDao.GetByAccount(ctx, userID, account, password)
 }
 
 func (s *TokenService) Get(ctx context.Context, tokenID, userID int64) (model.Token, error) {

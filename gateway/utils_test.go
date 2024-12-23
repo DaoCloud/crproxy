@@ -7,8 +7,6 @@ import (
 
 func TestParseOriginPathInfo(t *testing.T) {
 
-	testDefaultRegistry := "non_docker.io"
-
 	type args struct {
 		path string
 	}
@@ -19,42 +17,6 @@ func TestParseOriginPathInfo(t *testing.T) {
 		want            *PathInfo
 		wantOk          bool
 	}{
-		{
-			args: args{
-				path: "/v2/busybox/manifests/1",
-			},
-			defaultRegistry: testDefaultRegistry,
-			want: &PathInfo{
-				Host:      testDefaultRegistry,
-				Image:     "busybox",
-				Manifests: "1",
-			},
-			wantOk: true,
-		},
-		{
-			args: args{
-				path: "/v2/pytorch/pytorch/manifests/1",
-			},
-			defaultRegistry: testDefaultRegistry,
-			want: &PathInfo{
-				Host:      testDefaultRegistry,
-				Image:     "pytorch/pytorch",
-				Manifests: "1",
-			},
-			wantOk: true,
-		},
-		{
-			args: args{
-				path: "/v2/v2/manifests/latest",
-			},
-			defaultRegistry: testDefaultRegistry,
-			want: &PathInfo{
-				Host:      testDefaultRegistry,
-				Image:     "v2",
-				Manifests: "latest",
-			},
-			wantOk: true,
-		},
 		{
 			args: args{
 				path: "/v2/docker.io/busybox/manifests/1",
@@ -80,7 +42,7 @@ func TestParseOriginPathInfo(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, gotOk := parseOriginPathInfo(tt.args.path, tt.defaultRegistry)
+			got, gotOk := parseOriginPathInfo(tt.args.path)
 			if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("ParseOriginPathInfo() got = %v, want %v", got, tt.want)
 			}
