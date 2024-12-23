@@ -2,7 +2,6 @@ package controller
 
 import (
 	"crypto/rsa"
-	"encoding/json"
 	"net/http"
 	"strconv"
 
@@ -13,9 +12,9 @@ import (
 )
 
 type TokenRequest struct {
-	Account  string `json:"account"`
-	Password string `json:"password"`
-	Data     string `json:"data"`
+	Account  string          `json:"account"`
+	Password string          `json:"password"`
+	Data     model.TokenAttr `json:"data"`
 }
 
 type TokenResponse struct {
@@ -23,9 +22,9 @@ type TokenResponse struct {
 }
 
 type TokenDetailResponse struct {
-	TokenID int64  `json:"token_id"`
-	Account string `json:"account"`
-	Data    string `json:"data"`
+	TokenID int64           `json:"token_id"`
+	Account string          `json:"account"`
+	Data    model.TokenAttr `json:"data"`
 }
 
 type TokenController struct {
@@ -43,7 +42,6 @@ func (tc *TokenController) RegisterRoutes(ws *restful.WebService) {
 		Operation("createToken").
 		Produces(restful.MIME_JSON).
 		Consumes(restful.MIME_JSON).
-		Param(ws.HeaderParameter("Authorization", "Bearer <token>")).
 		Reads(TokenRequest{}).
 		Writes(TokenResponse{}).
 		Returns(http.StatusCreated, "Token created successfully.", TokenResponse{}).
@@ -53,7 +51,6 @@ func (tc *TokenController) RegisterRoutes(ws *restful.WebService) {
 		Doc("Retrieve all tokens by user.").
 		Operation("listToken").
 		Produces(restful.MIME_JSON).
-		Param(ws.HeaderParameter("Authorization", "Bearer <token>")).
 		Writes([]TokenDetailResponse{}).
 		Returns(http.StatusOK, "Tokens found.", []TokenDetailResponse{}).
 		Returns(http.StatusNotFound, "No tokens found for the user.", Error{}))
@@ -61,7 +58,6 @@ func (tc *TokenController) RegisterRoutes(ws *restful.WebService) {
 	ws.Route(ws.GET("/tokens/{id}").To(tc.Get).
 		Doc("Retrieve a token by its ID.").
 		Operation("getToken").
-		Param(ws.HeaderParameter("Authorization", "Bearer <token>")).
 		Produces(restful.MIME_JSON).
 		Param(ws.PathParameter("id", "Token ID").DataType("int64")).
 		Writes(TokenDetailResponse{}).
@@ -71,7 +67,6 @@ func (tc *TokenController) RegisterRoutes(ws *restful.WebService) {
 	ws.Route(ws.DELETE("/tokens/{id}").To(tc.Delete).
 		Doc("Delete a token by its ID.").
 		Operation("Token").
-		Param(ws.HeaderParameter("Authorization", "Bearer <token>")).
 		Produces(restful.MIME_JSON).
 		Param(ws.PathParameter("id", "Token ID").DataType("int64")).
 		Returns(http.StatusNoContent, "Token deleted successfully.", nil).
@@ -94,13 +89,6 @@ func (tc *TokenController) Create(req *restful.Request, resp *restful.Response) 
 
 	if tokenRequest.Account == "" || tokenRequest.Password == "" {
 		resp.WriteHeaderAndEntity(http.StatusBadRequest, Error{Code: "MissingCredentialsError", Message: "Account and password must be provided."})
-		return
-	}
-
-	var data map[string]any
-	err = json.Unmarshal([]byte(tokenRequest.Data), &data)
-	if err != nil {
-		resp.WriteHeaderAndEntity(http.StatusBadRequest, Error{Code: "InvalidDataError", Message: "Invalid data: " + err.Error()})
 		return
 	}
 
