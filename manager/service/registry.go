@@ -53,7 +53,7 @@ func (s *RegistryService) DeleteByID(ctx context.Context, registryID, userID int
 	return s.registryDao.DeleteByID(ctx, registryID, userID)
 }
 
-func (s *RegistryService) UpdateAllowImages(ctx context.Context, userID int64, allows []string) (retErr error) {
+func (s *RegistryService) UpdateAllowImages(ctx context.Context, userID int64, allows []string, blockMessage string) (retErr error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -71,11 +71,9 @@ func (s *RegistryService) UpdateAllowImages(ctx context.Context, userID int64, a
 
 	for _, registry := range registrys {
 		if registry.Data.AllowPrefix {
-			registry.Data.EnableAllowlist = true
 			registry.Data.Allowlist = allows
 		} else if registry.Data.Source != "" {
 			s := registry.Data.Source + "/"
-			registry.Data.EnableAllowlist = true
 			registry.Data.Allowlist = slices.Filter(allows, func(image string) bool {
 				return strings.HasPrefix(image, s)
 			})
@@ -84,6 +82,11 @@ func (s *RegistryService) UpdateAllowImages(ctx context.Context, userID int64, a
 			}
 		} else {
 			continue
+		}
+
+		registry.Data.EnableAllowlist = true
+		if blockMessage != "" {
+			registry.Data.AllowlisBlockMessage = blockMessage
 		}
 
 		err = s.registryDao.UpdateByID(ctx, registry.RegistryID, userID, registry)

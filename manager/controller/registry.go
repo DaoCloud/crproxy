@@ -17,7 +17,8 @@ type RegistryRequest struct {
 }
 
 type RegistryUpdateAllowImagesRequest struct {
-	Items []string `json:"items"`
+	Items        []string `json:"items"`
+	BlockMessage string   `json:"block_message"`
 }
 
 type RegistryUpdateIPDataRequest struct {
@@ -247,7 +248,7 @@ func (rc *RegistryController) UpdateAllowImages(req *restful.Request, resp *rest
 		return
 	}
 
-	err = rc.registryService.UpdateAllowImages(req.Request.Context(), session.UserID, registryRequest.Items)
+	err = rc.registryService.UpdateAllowImages(req.Request.Context(), session.UserID, registryRequest.Items, registryRequest.BlockMessage)
 	if err != nil {
 		resp.WriteHeaderAndEntity(http.StatusInternalServerError, Error{Code: "RegistryUpdateError", Message: "Failed to update registry: " + err.Error()})
 		return

@@ -20,8 +20,9 @@ type RegistryAttr struct {
 	AllowPrefix bool   `json:"allow_prefix"`
 	Source      string `json:"source"`
 
-	Allowlist       []string `json:"allowlist"`
-	EnableAllowlist bool     `json:"enable_allowlist"`
+	EnableAllowlist      bool     `json:"enable_allowlist"`
+	Allowlist            []string `json:"allowlist"`
+	AllowlisBlockMessage string   `json:"allowlist_block_message"`
 
 	SpecialIPs map[string]TokenAttr `json:"special_ips"`
 }

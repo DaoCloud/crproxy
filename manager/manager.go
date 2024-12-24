@@ -144,7 +144,7 @@ func (m *Manager) getRegistry(ctx context.Context, t *token.Token) (registryCach
 	return rc, nil
 }
 
-func (m *Manager) getToken(ctx context.Context, userinfo *url.Userinfo, t *token.Token, registry registryCache, image string) (model.Token, error) {
+func (m *Manager) getToken(ctx context.Context, userinfo *url.Userinfo, t *token.Token, registry registryCache) (model.Token, error) {
 	if userinfo == nil {
 		if len(registry.Registry.Data.SpecialIPs) != 0 {
 			tt, ok := registry.Registry.Data.SpecialIPs[t.IP]
@@ -158,12 +158,6 @@ func (m *Manager) getToken(ctx context.Context, userinfo *url.Userinfo, t *token
 
 		if !registry.Registry.Data.AllowAnonymous {
 			return model.Token{}, fmt.Errorf("anonymous access is not allowed")
-		}
-
-		if !registry.Registry.Data.Anonymous.NoAllowlist && registry.ImagesMatcher != nil {
-			if !registry.ImagesMatcher.Match(image) {
-				return model.Token{}, fmt.Errorf("image %q is not allowed", image)
-			}
 		}
 
 		return model.Token{
@@ -188,7 +182,7 @@ func (m *Manager) getToken(ctx context.Context, userinfo *url.Userinfo, t *token
 		return cached.attr, cached.err
 	}
 
-	tt, err := m.TokenService.GetByAccount(ctx, up.UserID, up.TokenUser, up.TokenPassword)
+	tok, err := m.TokenService.GetByAccount(ctx, up.UserID, up.TokenUser, up.TokenPassword)
 	if err != nil {
 		m.tokenCache.Set(up, responseItem[model.Token]{err: err}, m.cacheTTL)
 		return model.Token{}, err
@@ -199,14 +193,8 @@ func (m *Manager) getToken(ctx context.Context, userinfo *url.Userinfo, t *token
 		ttl = time.Duration(registry.Registry.Data.TTLSecond) * time.Second
 	}
 
-	if !tt.Data.NoAllowlist && registry.ImagesMatcher != nil {
-		if !registry.ImagesMatcher.Match(image) {
-			return model.Token{}, fmt.Errorf("image %q is not allowed", image)
-		}
-	}
-
-	m.tokenCache.Set(up, responseItem[model.Token]{attr: tt}, ttl)
-	return tt, nil
+	m.tokenCache.Set(up, responseItem[model.Token]{attr: tok}, ttl)
+	return tok, nil
 }
 
 func getHostAndImage(repo string, allowPrefix bool, source string) (host string, image string, err error) {
@@ -219,7 +207,7 @@ func getHostAndImage(repo string, allowPrefix bool, source string) (host string,
 		return source, repo, nil
 	}
 
-	return "", "", fmt.Errorf("invalid repository format: %q, source: %q", repo, source)
+	return "", "", fmt.Errorf("invalid repository: %q, source: %q", repo, source)
 }
 
 func (m *Manager) GetTokenWithUser(ctx context.Context, userinfo *url.Userinfo, t *token.Token) (token.Attribute, error) {
@@ -228,33 +216,48 @@ func (m *Manager) GetTokenWithUser(ctx context.Context, userinfo *url.Userinfo, 
 		return token.Attribute{}, err
 	}
 
-	host, image, err := getHostAndImage(t.Image, registry.Registry.Data.AllowPrefix, registry.Registry.Data.Source)
-	if err != nil {
-		return token.Attribute{}, err
-	}
-
-	tt, err := m.getToken(ctx, userinfo, t, registry, host+"/"+image)
+	tok, err := m.getToken(ctx, userinfo, t, registry)
 	if err != nil {
 		return token.Attribute{}, err
 	}
 
 	attr := token.Attribute{
-		UserID:     tt.UserID,
-		TokenID:    tt.TokenID,
+		UserID:     tok.UserID,
+		TokenID:    tok.TokenID,
 		RegistryID: registry.Registry.RegistryID,
 
-		NoRateLimit:        tt.Data.NoRateLimit,
-		RateLimitPerSecond: tt.Data.RateLimitPerSecond,
+		NoRateLimit:        tok.Data.NoRateLimit,
+		RateLimitPerSecond: tok.Data.RateLimitPerSecond,
 
-		NoAllowlist:   tt.Data.NoAllowlist,
-		NoBlock:       tt.Data.NoBlock,
-		AllowTagsList: tt.Data.AllowTagsList,
+		NoAllowlist:   tok.Data.NoAllowlist,
+		NoBlock:       tok.Data.NoBlock,
+		AllowTagsList: tok.Data.AllowTagsList,
 
-		Block:        tt.Data.Block,
-		BlockMessage: tt.Data.BlockMessage,
+		BlobsURL: tok.Data.BlobsURL,
 
-		Host:  host,
-		Image: image,
+		Block:        tok.Data.Block,
+		BlockMessage: tok.Data.BlockMessage,
+	}
+
+	if !attr.Block {
+		if t.Image != "" && !attr.NoAllowlist && registry.ImagesMatcher != nil {
+			host, image, err := getHostAndImage(t.Image, registry.Registry.Data.AllowPrefix, registry.Registry.Data.Source)
+			if err != nil {
+				attr.Block = true
+				attr.BlockMessage = err.Error()
+			} else {
+				attr.Host = host
+				attr.Image = image
+				if !registry.ImagesMatcher.Match(host + "/" + image) {
+					attr.Block = true
+					if registry.Registry.Data.AllowlisBlockMessage != "" {
+						attr.BlockMessage = registry.Registry.Data.AllowlisBlockMessage
+					} else {
+						attr.BlockMessage = fmt.Sprintf("image %q is not allowed", image)
+					}
+				}
+			}
+		}
 	}
 	return attr, nil
 }
