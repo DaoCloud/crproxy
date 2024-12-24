@@ -14,11 +14,13 @@ type Token struct {
 }
 
 type TokenAttr struct {
-	NoRateLimit        bool   `json:"no_rate_limit"`
-	RateLimitPerSecond uint64 `json:"rate_limit_per_second"`
-	AllowTagsList      bool   `json:"allow_tags_list"`
-	NoAllowlist        bool   `json:"no_allowlist"`
-	NoBlock            bool   `json:"no_block"`
+	NoRateLimit        bool   `json:"no_rate_limit,omitempty"`
+	RateLimitPerSecond uint64 `json:"rate_limit_per_second,omitempty"`
+	AllowTagsList      bool   `json:"allow_tags_list,omitempty"`
+	NoAllowlist        bool   `json:"no_allowlist,omitempty"`
+	NoBlock            bool   `json:"no_block,omitempty"`
+
+	BlobsURL string `json:"blobs_url,omitempty"`
 
 	Block        bool   `json:"block,omitempty"`
 	BlockMessage string `json:"block_message,omitempty"`
