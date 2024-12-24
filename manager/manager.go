@@ -160,7 +160,7 @@ func (m *Manager) getToken(ctx context.Context, userinfo *url.Userinfo, t *token
 			return model.Token{}, fmt.Errorf("anonymous access is not allowed")
 		}
 
-		if !registry.Registry.Data.Anonymous.NoAllowlist && registry.ImagesMatcher != nil {
+		if image != "" && !registry.Registry.Data.Anonymous.NoAllowlist && registry.ImagesMatcher != nil {
 			if !registry.ImagesMatcher.Match(image) {
 				return model.Token{}, fmt.Errorf("image %q is not allowed", image)
 			}
@@ -199,7 +199,7 @@ func (m *Manager) getToken(ctx context.Context, userinfo *url.Userinfo, t *token
 		ttl = time.Duration(registry.Registry.Data.TTLSecond) * time.Second
 	}
 
-	if !tt.Data.NoAllowlist && registry.ImagesMatcher != nil {
+	if image != "" && !tt.Data.NoAllowlist && registry.ImagesMatcher != nil {
 		if !registry.ImagesMatcher.Match(image) {
 			return model.Token{}, fmt.Errorf("image %q is not allowed", image)
 		}
@@ -226,6 +226,29 @@ func (m *Manager) GetTokenWithUser(ctx context.Context, userinfo *url.Userinfo, 
 	registry, err := m.getRegistry(ctx, t)
 	if err != nil {
 		return token.Attribute{}, err
+	}
+
+	if t.Image == "" {
+		tt, err := m.getToken(ctx, userinfo, t, registry, "")
+		if err != nil {
+			return token.Attribute{}, err
+		}
+		attr := token.Attribute{
+			UserID:     tt.UserID,
+			TokenID:    tt.TokenID,
+			RegistryID: registry.Registry.RegistryID,
+
+			NoRateLimit:        tt.Data.NoRateLimit,
+			RateLimitPerSecond: tt.Data.RateLimitPerSecond,
+
+			NoAllowlist:   tt.Data.NoAllowlist,
+			NoBlock:       tt.Data.NoBlock,
+			AllowTagsList: tt.Data.AllowTagsList,
+
+			Block:        tt.Data.Block,
+			BlockMessage: tt.Data.BlockMessage,
+		}
+		return attr, nil
 	}
 
 	host, image, err := getHostAndImage(t.Image, registry.Registry.Data.AllowPrefix, registry.Registry.Data.Source)
