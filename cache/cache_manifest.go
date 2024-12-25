@@ -69,7 +69,12 @@ func (c *Cache) GetManifestContent(ctx context.Context, host, image, tagOrBlob s
 		return nil, "", "", err
 	}
 
-	return content, digest, mt.MediaType, nil
+	mediaType := mt.MediaType
+	if mediaType == "" {
+		mediaType = "application/vnd.docker.distribution.manifest.v1+json"
+	}
+
+	return content, digest, mediaType, nil
 }
 
 func manifestRevisionsCachePath(host, image, tagOrBlob string) string {
