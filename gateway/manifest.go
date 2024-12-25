@@ -20,8 +20,7 @@ func (c *Gateway) cacheManifestResponse(rw http.ResponseWriter, r *http.Request,
 		return
 	}
 
-	reqCtx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
-	defer cancel()
+	reqCtx := r.Context()
 
 	u := url.URL{
 		Scheme: "https",
@@ -34,8 +33,28 @@ func (c *Gateway) cacheManifestResponse(rw http.ResponseWriter, r *http.Request,
 		errcode.ServeJSON(rw, errcode.ErrorCodeUnknown)
 		return
 	}
-	r.Header = map[string][]string{
-		"Accept": {"application/vnd.docker.distribution.manifest.v1+json,application/vnd.docker.distribution.manifest.v1+prettyjws,application/vnd.docker.distribution.manifest.v2+json,application/vnd.oci.image.manifest.v1+json,application/vnd.docker.distribution.manifest.list.v2+json,application/vnd.oci.image.index.v1+json"},
+
+	if forwardReq.Header == nil {
+		forwardReq.Header = map[string][]string{}
+	}
+
+	if info.IsDigestManifests {
+		forwardReq.Header.Set("Accept", r.Header.Get("Accept"))
+	} else {
+		list := strings.Split(r.Header.Get("Accept"), ",")
+		acceptItems := []string{}
+		for _, item := range list {
+			item = strings.TrimSpace(item)
+			_, ok := c.accepts[item]
+			if ok {
+				acceptItems = append(acceptItems, item)
+			}
+		}
+		if len(acceptItems) != 0 {
+			forwardReq.Header.Set("Accept", strings.Join(acceptItems, ","))
+		} else {
+			forwardReq.Header.Set("Accept", r.Header.Get("Accept"))
+		}
 	}
 
 	resp, err := c.httpClient.Do(forwardReq)
@@ -115,9 +134,7 @@ func (c *Gateway) cacheManifestResponse(rw http.ResponseWriter, r *http.Request,
 }
 
 func (c *Gateway) tryFirstServeCachedManifest(rw http.ResponseWriter, r *http.Request, info *PathInfo) bool {
-	isHash := strings.HasPrefix(info.Manifests, "sha256:")
-
-	if !isHash && c.manifestCacheDuration > 0 {
+	if !info.IsDigestManifests && c.manifestCacheDuration > 0 {
 		last, ok := c.manifestCache.Load(manifestCacheKey(info))
 		if !ok {
 			return false
@@ -132,8 +149,7 @@ func (c *Gateway) tryFirstServeCachedManifest(rw http.ResponseWriter, r *http.Re
 }
 
 func (c *Gateway) fallbackServeCachedManifest(rw http.ResponseWriter, r *http.Request, info *PathInfo) bool {
-	isHash := strings.HasPrefix(info.Manifests, "sha256:")
-	if isHash {
+	if info.IsDigestManifests {
 		return false
 	}
 
@@ -157,22 +173,22 @@ func (c *Gateway) serveCachedManifest(rw http.ResponseWriter, r *http.Request, i
 		rw.Write(content)
 	}
 
-	if c.manifestCacheDuration > 0 {
+	if c.manifestCacheDuration > 0 && !info.IsDigestManifests {
 		c.manifestCache.Store(manifestCacheKey(info), time.Now())
 	}
 	return true
 }
 
 type cacheKey struct {
-	Host   string
-	Image  string
-	Digest string
+	Host  string
+	Image string
+	Tag   string
 }
 
 func manifestCacheKey(info *PathInfo) cacheKey {
 	return cacheKey{
-		Host:   info.Host,
-		Image:  info.Image,
-		Digest: info.Manifests,
+		Host:  info.Host,
+		Image: info.Image,
+		Tag:   info.Manifests,
 	}
 }
