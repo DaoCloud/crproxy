@@ -26,9 +26,10 @@ type PathInfo struct {
 	Host  string
 	Image string
 
-	TagsList  bool
-	Manifests string
-	Blobs     string
+	TagsList          bool
+	Manifests         string
+	IsDigestManifests bool
+	Blobs             string
 }
 
 func (p PathInfo) Path() (string, error) {
@@ -93,6 +94,7 @@ func parseOriginPathInfo(path string) (*PathInfo, bool) {
 		info.TagsList = tails[len(tails)-1] == "list"
 	case "manifests":
 		info.Manifests = tails[len(tails)-1]
+		info.IsDigestManifests = strings.HasPrefix(info.Manifests, "sha256:")
 	case "blobs":
 		info.Blobs = tails[len(tails)-1]
 		if len(info.Blobs) != 7+64 {
