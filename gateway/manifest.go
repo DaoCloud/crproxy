@@ -34,8 +34,25 @@ func (c *Gateway) cacheManifestResponse(rw http.ResponseWriter, r *http.Request,
 		errcode.ServeJSON(rw, errcode.ErrorCodeUnknown)
 		return
 	}
-	r.Header = map[string][]string{
-		"Accept": {"application/vnd.docker.distribution.manifest.v1+json,application/vnd.docker.distribution.manifest.v1+prettyjws,application/vnd.docker.distribution.manifest.v2+json,application/vnd.oci.image.manifest.v1+json,application/vnd.docker.distribution.manifest.list.v2+json,application/vnd.oci.image.index.v1+json"},
+
+	isHash := strings.HasPrefix(info.Manifests, "sha256:")
+
+	if forwardReq.Header == nil {
+		forwardReq.Header = map[string][]string{}
+	}
+	if isHash {
+		forwardReq.Header.Set("Accept", r.Header.Get("Accept"))
+	} else {
+		list := strings.Split(r.Header.Get("Accept"), ",")
+		acceptItems := []string{}
+		for _, item := range list {
+			item = strings.TrimSpace(item)
+			_, ok := c.accepts[item]
+			if ok {
+				acceptItems = append(acceptItems, item)
+			}
+		}
+		forwardReq.Header.Set("Accept", strings.Join(acceptItems, ","))
 	}
 
 	resp, err := c.httpClient.Do(forwardReq)

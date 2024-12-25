@@ -39,6 +39,8 @@ type Gateway struct {
 	manifestCacheDuration time.Duration
 	authenticator         *token.Authenticator
 
+	accepts map[string]struct{}
+
 	agent *agent.Agent
 }
 
@@ -89,6 +91,14 @@ func WithCache(cache *cache.Cache) Option {
 func NewGateway(opts ...Option) (*Gateway, error) {
 	c := &Gateway{
 		logger: slog.Default(),
+		accepts: map[string]struct{}{
+			"application/vnd.docker.distribution.manifest.v1+json":      {},
+			"application/vnd.docker.distribution.manifest.v1+prettyjws": {},
+			"application/vnd.docker.distribution.manifest.v2+json":      {},
+			"application/vnd.oci.image.manifest.v1+json":                {},
+			"application/vnd.docker.distribution.manifest.list.v2+json": {},
+			"application/vnd.oci.image.index.v1+json":                   {},
+		},
 	}
 
 	for _, opt := range opts {
