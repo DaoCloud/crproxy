@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/textproto"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -16,7 +17,20 @@ import (
 )
 
 func (c *Gateway) cacheManifestResponse(rw http.ResponseWriter, r *http.Request, info *PathInfo, t *token.Token) {
-	if c.tryFirstServeCachedManifest(rw, r, info) {
+	var acceptItems []string
+
+	if !info.IsDigestManifests {
+		list := strings.Split(r.Header.Get("Accept"), ",")
+		for _, item := range list {
+			item = strings.TrimSpace(item)
+			_, ok := c.accepts[item]
+			if ok {
+				acceptItems = append(acceptItems, item)
+			}
+		}
+	}
+
+	if c.tryFirstServeCachedManifest(rw, r, info, acceptItems) {
 		return
 	}
 
@@ -41,15 +55,6 @@ func (c *Gateway) cacheManifestResponse(rw http.ResponseWriter, r *http.Request,
 	if info.IsDigestManifests {
 		forwardReq.Header.Set("Accept", r.Header.Get("Accept"))
 	} else {
-		list := strings.Split(r.Header.Get("Accept"), ",")
-		acceptItems := []string{}
-		for _, item := range list {
-			item = strings.TrimSpace(item)
-			_, ok := c.accepts[item]
-			if ok {
-				acceptItems = append(acceptItems, item)
-			}
-		}
 		if len(acceptItems) != 0 {
 			forwardReq.Header.Set("Accept", strings.Join(acceptItems, ","))
 		} else {
@@ -59,7 +64,7 @@ func (c *Gateway) cacheManifestResponse(rw http.ResponseWriter, r *http.Request,
 
 	resp, err := c.httpClient.Do(forwardReq)
 	if err != nil {
-		if c.fallbackServeCachedManifest(rw, r, info) {
+		if c.fallbackServeCachedManifest(rw, r, info, acceptItems) {
 			return
 		}
 		c.logger.Error("failed to request", "url", u, "error", err)
@@ -72,7 +77,7 @@ func (c *Gateway) cacheManifestResponse(rw http.ResponseWriter, r *http.Request,
 
 	switch resp.StatusCode {
 	case http.StatusUnauthorized, http.StatusForbidden:
-		if c.fallbackServeCachedManifest(rw, r, info) {
+		if c.fallbackServeCachedManifest(rw, r, info, acceptItems) {
 			c.logger.Error("origin manifest response 40x, but hit caches", "url", u, "error", err, "response", dumpResponse(resp))
 			return
 		}
@@ -82,19 +87,19 @@ func (c *Gateway) cacheManifestResponse(rw http.ResponseWriter, r *http.Request,
 	}
 
 	if resp.StatusCode >= http.StatusBadRequest && resp.StatusCode < http.StatusInternalServerError {
-		if c.fallbackServeCachedManifest(rw, r, info) {
+		if c.fallbackServeCachedManifest(rw, r, info, acceptItems) {
 			c.logger.Error("origin manifest response 4xx, but hit caches", "url", u, "error", err, "response", dumpResponse(resp))
 			return
 		}
 		c.logger.Error("origin manifest response 4xx", "url", u, "error", err, "response", dumpResponse(resp))
 	} else if resp.StatusCode >= http.StatusInternalServerError {
-		if c.fallbackServeCachedManifest(rw, r, info) {
+		if c.fallbackServeCachedManifest(rw, r, info, acceptItems) {
 			c.logger.Error("origin manifest response 5xx, but hit caches", "url", u, "error", err, "response", dumpResponse(resp))
 			return
 		}
 		c.logger.Error("origin manifest response 5xx", "url", u, "error", err, "response", dumpResponse(resp))
 	} else if resp.StatusCode < http.StatusOK {
-		if c.fallbackServeCachedManifest(rw, r, info) {
+		if c.fallbackServeCachedManifest(rw, r, info, acceptItems) {
 			c.logger.Error("origin manifest response 1xx, but hit caches", "url", u, "error", err, "response", dumpResponse(resp))
 			return
 		}
@@ -115,7 +120,12 @@ func (c *Gateway) cacheManifestResponse(rw http.ResponseWriter, r *http.Request,
 		return
 	}
 
-	if resp.StatusCode >= http.StatusOK && resp.StatusCode < http.StatusMultipleChoices {
+	needCache := resp.StatusCode >= http.StatusOK && resp.StatusCode < http.StatusMultipleChoices
+	if !info.IsDigestManifests {
+		_, ok := c.accepts[resp.Header.Get("Content-Type")]
+		needCache = needCache && ok
+	}
+	if needCache {
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
 			c.errorResponse(rw, r, err)
@@ -133,7 +143,7 @@ func (c *Gateway) cacheManifestResponse(rw http.ResponseWriter, r *http.Request,
 	}
 }
 
-func (c *Gateway) tryFirstServeCachedManifest(rw http.ResponseWriter, r *http.Request, info *PathInfo) bool {
+func (c *Gateway) tryFirstServeCachedManifest(rw http.ResponseWriter, r *http.Request, info *PathInfo, acceptItems []string) bool {
 	if !info.IsDigestManifests && c.manifestCacheDuration > 0 {
 		last, ok := c.manifestCache.Load(manifestCacheKey(info))
 		if !ok {
@@ -145,18 +155,18 @@ func (c *Gateway) tryFirstServeCachedManifest(rw http.ResponseWriter, r *http.Re
 		}
 	}
 
-	return c.serveCachedManifest(rw, r, info)
+	return c.serveCachedManifest(rw, r, info, acceptItems)
 }
 
-func (c *Gateway) fallbackServeCachedManifest(rw http.ResponseWriter, r *http.Request, info *PathInfo) bool {
+func (c *Gateway) fallbackServeCachedManifest(rw http.ResponseWriter, r *http.Request, info *PathInfo, acceptItems []string) bool {
 	if info.IsDigestManifests {
 		return false
 	}
 
-	return c.serveCachedManifest(rw, r, info)
+	return c.serveCachedManifest(rw, r, info, acceptItems)
 }
 
-func (c *Gateway) serveCachedManifest(rw http.ResponseWriter, r *http.Request, info *PathInfo) bool {
+func (c *Gateway) serveCachedManifest(rw http.ResponseWriter, r *http.Request, info *PathInfo, acceptItems []string) bool {
 	ctx := r.Context()
 
 	content, digest, mediaType, err := c.cache.GetManifestContent(ctx, info.Host, info.Image, info.Manifests)
@@ -165,7 +175,12 @@ func (c *Gateway) serveCachedManifest(rw http.ResponseWriter, r *http.Request, i
 		return false
 	}
 
-	c.logger.Info("Manifest blob cache hit", "digest", digest)
+	if len(acceptItems) != 0 && !slices.Contains(acceptItems, mediaType) {
+		c.logger.Error("Manifest cache hit, but type not match", "error", err)
+		return false
+	}
+
+	c.logger.Info("Manifest cache hit", "digest", digest)
 	rw.Header().Set("Docker-Content-Digest", digest)
 	rw.Header().Set("Content-Type", mediaType)
 	rw.Header().Set("Content-Length", strconv.FormatInt(int64(len(content)), 10))
