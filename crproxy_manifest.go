@@ -18,6 +18,8 @@ func (c *CRProxy) cacheManifestResponse(rw http.ResponseWriter, r *http.Request,
 		return
 	}
 
+	r.Header.Set("Accept", "application/vnd.oci.image.index.v1+json,application/vnd.docker.distribution.manifest.list.v2+json,application/vnd.oci.image.manifest.v1+json,application/vnd.docker.distribution.manifest.v2+json")
+
 	resp, err := c.httpClient.Do(r)
 	if err != nil {
 		if c.fallbackServeCachedManifest(rw, r, info) {
