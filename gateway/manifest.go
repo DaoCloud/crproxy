@@ -17,18 +17,7 @@ import (
 )
 
 func (c *Gateway) cacheManifestResponse(rw http.ResponseWriter, r *http.Request, info *PathInfo, t *token.Token) {
-	var acceptItems []string
-
-	if !info.IsDigestManifests {
-		list := strings.Split(r.Header.Get("Accept"), ",")
-		for _, item := range list {
-			item = strings.TrimSpace(item)
-			_, ok := c.accepts[item]
-			if ok {
-				acceptItems = append(acceptItems, item)
-			}
-		}
-	}
+	acceptItems := c.acceptsItems
 
 	if c.tryFirstServeCachedManifest(rw, r, info, acceptItems) {
 		return
