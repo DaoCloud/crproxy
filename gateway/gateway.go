@@ -42,6 +42,8 @@ type Gateway struct {
 	acceptsItems []string
 	accepts      map[string]struct{}
 
+	blobsLENoAgent int
+
 	agent *agent.Agent
 }
 
@@ -86,6 +88,12 @@ func WithAuthenticator(authenticator *token.Authenticator) Option {
 func WithCache(cache *cache.Cache) Option {
 	return func(c *Gateway) {
 		c.cache = cache
+	}
+}
+
+func WithBlobsLENoAgent(blobsLENoAgent int) Option {
+	return func(c *Gateway) {
+		c.blobsLENoAgent = blobsLENoAgent
 	}
 }
 

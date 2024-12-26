@@ -10,6 +10,17 @@ import (
 )
 
 func (c *Gateway) blob(rw http.ResponseWriter, r *http.Request, info *PathInfo, t *token.Token, authData string) {
+	if c.cache != nil && c.agent != nil && c.blobsLENoAgent != 0 {
+		if fi, err := c.cache.StatBlob(r.Context(), info.Blobs); err == nil && fi.Size() <= int64(c.blobsLENoAgent) {
+			c.agent.Serve(rw, r, &agent.BlobInfo{
+				Host:  info.Host,
+				Image: info.Image,
+				Blobs: info.Blobs,
+			}, t)
+			return
+		}
+	}
+
 	if t.Attribute.BlobsURL != "" {
 		values := url.Values{
 			"referer":       {r.RemoteAddr},

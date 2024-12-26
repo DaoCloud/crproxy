@@ -42,6 +42,8 @@ type flagpole struct {
 	TokenURL           string
 
 	ReadmeURL string
+
+	BlobsLENoAgent int
 }
 
 func NewCommand() *cobra.Command {
@@ -76,6 +78,8 @@ func NewCommand() *cobra.Command {
 	cmd.Flags().StringVar(&flags.TokenURL, "token-url", flags.TokenURL, "Token url")
 
 	cmd.Flags().StringVar(&flags.ReadmeURL, "readme-url", flags.ReadmeURL, "Readme url")
+
+	cmd.Flags().IntVar(&flags.BlobsLENoAgent, "blobs-le-no-agent", flags.BlobsLENoAgent, "Less than or equal to No Agent")
 	return cmd
 }
 
@@ -88,6 +92,7 @@ func runE(ctx context.Context, flags *flagpole) error {
 
 	opts = append(opts,
 		gateway.WithLogger(logger),
+		gateway.WithBlobsLENoAgent(flags.BlobsLENoAgent),
 		gateway.WithPathInfoModifyFunc(func(info *gateway.ImageInfo) *gateway.ImageInfo {
 			if info.Host == "docker.io" {
 				info.Host = "registry-1.docker.io"
