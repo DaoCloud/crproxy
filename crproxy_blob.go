@@ -141,6 +141,9 @@ func (c *CRProxy) cacheBlobContent(ctx context.Context, r *http.Request, blobPat
 	}
 
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		if c.logger != nil {
+			c.logger.Println("origin blob response 5xx", r.Header, info.Host, info.Image, resp.StatusCode, dumpResponse(resp))
+		}
 		return 0, errcode.ErrorCodeUnknown.WithMessage(fmt.Sprintf("Source response code %d", resp.StatusCode))
 	}
 
