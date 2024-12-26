@@ -140,7 +140,31 @@ func (c *CRProxy) cacheBlobContent(ctx context.Context, r *http.Request, blobPat
 		return 0, errcode.ErrorCodeDenied
 	}
 
-	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+	if resp.StatusCode < http.StatusOK {
+		if c.logger != nil {
+			c.logger.Println("origin blob response 1xx", r.Header, info.Host, info.Image, resp.StatusCode, dumpResponse(resp))
+		}
+		return 0, errcode.ErrorCodeUnknown.WithMessage(fmt.Sprintf("Source response code %d", resp.StatusCode))
+	}
+
+	if resp.StatusCode >= http.StatusMultipleChoices && resp.StatusCode < http.StatusBadRequest {
+		if c.logger != nil {
+			c.logger.Println("origin blob response 3xx", r.Header, info.Host, info.Image, resp.StatusCode, dumpResponse(resp))
+		}
+		return 0, errcode.ErrorCodeUnknown.WithMessage(fmt.Sprintf("Source response code %d", resp.StatusCode))
+	}
+
+	if resp.StatusCode >= http.StatusBadRequest && resp.StatusCode < http.StatusInternalServerError {
+		if c.logger != nil {
+			c.logger.Println("origin blob response 4xx", r.Header, info.Host, info.Image, resp.StatusCode, dumpResponse(resp))
+		}
+		return 0, errcode.ErrorCodeUnknown.WithMessage(fmt.Sprintf("Source response code %d", resp.StatusCode))
+	}
+
+	if resp.StatusCode >= http.StatusInternalServerError {
+		if c.logger != nil {
+			c.logger.Println("origin blob response 5xx", r.Header, info.Host, info.Image, resp.StatusCode, dumpResponse(resp))
+		}
 		return 0, errcode.ErrorCodeUnknown.WithMessage(fmt.Sprintf("Source response code %d", resp.StatusCode))
 	}
 

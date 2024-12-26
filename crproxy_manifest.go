@@ -70,7 +70,7 @@ func (c *CRProxy) cacheManifestResponse(rw http.ResponseWriter, r *http.Request,
 			return
 		}
 		if c.logger != nil {
-			c.logger.Println("origin manifest response 4xx", info.Host, info.Image, err, dumpResponse(resp))
+			c.logger.Println("origin manifest response 4xx", info.Host, info.Image)
 		}
 	} else if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusInternalServerError {
 		if c.fallbackServeCachedManifest(rw, r, info) {
@@ -80,7 +80,7 @@ func (c *CRProxy) cacheManifestResponse(rw http.ResponseWriter, r *http.Request,
 			return
 		}
 		if c.logger != nil {
-			c.logger.Println("origin manifest response 5xx", info.Host, info.Image, err, dumpResponse(resp))
+			c.logger.Println("origin manifest response 5xx", info.Host, info.Image)
 		}
 	}
 
