@@ -169,6 +169,8 @@ github.com/wzshiming/geario v0.0.0-20240308093553-a996e3817533 h1:mq74wxgDCz7Q6C
 github.com/wzshiming/geario v0.0.0-20240308093553-a996e3817533/go.mod h1:Fodw3HJvNUS+/MgqXCRp9iYLQfynAu/LKXGOWoX+D/Q=
 github.com/wzshiming/hostmatcher v0.0.3 h1:+JYAq6vUZXDEQ1Ipfdc/D7HmaIMngcc71ftonyCQVQk=
 github.com/wzshiming/hostmatcher v0.0.3/go.mod h1:F04RIvIWEvOIrIKOlQlMuR8vQMKAVf2YhpU6l31Wwz4=
+github.com/wzshiming/imc v0.0.0-20241230040120-5e21bf59cef4 h1:2MoTyHDqWbm7ssLDqU9bd17XyMBBVhRNXtjjykT8YxU=
+github.com/wzshiming/imc v0.0.0-20241230040120-5e21bf59cef4/go.mod h1:U4qkQ1uQB16r15JFVbbTmevsVJnqBz9p/sHdIThCs/A=
 github.com/wzshiming/trie v0.3.1 h1:YpuoqmEQFJiW0mns/mM6Qk4kdWrXc8kc28/KR1vn0m8=
 github.com/wzshiming/trie v0.3.1/go.mod h1:c9thxXTh4KcGkejt4sUsO4c5GUmWpxeWzOJ7AZJaI+8=
 go.uber.org/atomic v1.9.0 h1:ECmE8Bn/WFTYwEW/bpKD3M8VtR/zQVbavAoalC1PYyE=
