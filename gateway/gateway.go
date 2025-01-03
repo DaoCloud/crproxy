@@ -13,7 +13,6 @@ import (
 
 	"github.com/daocloud/crproxy/agent"
 	"github.com/daocloud/crproxy/cache"
-	"github.com/daocloud/crproxy/internal/maps"
 	"github.com/daocloud/crproxy/internal/utils"
 	"github.com/daocloud/crproxy/token"
 	"github.com/docker/distribution/registry/api/errcode"
@@ -31,15 +30,15 @@ type ImageInfo struct {
 }
 
 type Gateway struct {
-	mutCache              sync.Map
-	httpClient            *http.Client
-	modify                func(info *ImageInfo) *ImageInfo
-	logger                *slog.Logger
-	disableTagsList       bool
-	cache                 *cache.Cache
-	manifestCache         maps.SyncMap[cacheKey, time.Time]
-	manifestCacheDuration time.Duration
-	authenticator         *token.Authenticator
+	mutCache        sync.Map
+	httpClient      *http.Client
+	modify          func(info *ImageInfo) *ImageInfo
+	logger          *slog.Logger
+	disableTagsList bool
+	cache           *cache.Cache
+
+	manifestCache *manifestCache
+	authenticator *token.Authenticator
 
 	defaultRegistry         string
 	overrideDefaultRegistry map[string]string
@@ -63,7 +62,7 @@ func WithClient(client *http.Client) Option {
 
 func WithManifestCacheDuration(d time.Duration) Option {
 	return func(c *Gateway) {
-		c.manifestCacheDuration = d
+		c.manifestCache = newManifestCache(d)
 	}
 }
 
