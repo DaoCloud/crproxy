@@ -1,6 +1,8 @@
 module github.com/daocloud/crproxy
 
-go 1.22
+go 1.23
+
+toolchain go1.23.4
 
 require (
 	github.com/denverdino/aliyungo v0.0.0
@@ -18,6 +20,7 @@ require (
 	github.com/wzshiming/cmux v0.4.2
 	github.com/wzshiming/geario v0.0.0-20240308093553-a996e3817533
 	github.com/wzshiming/hostmatcher v0.0.3
+	github.com/wzshiming/imc v0.0.0-20241230040120-5e21bf59cef4
 	golang.org/x/crypto v0.28.0
 )
 
