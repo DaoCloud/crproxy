@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/daocloud/crproxy/internal/cache"
 	"github.com/daocloud/crproxy/internal/format"
 	"github.com/daocloud/crproxy/manager/controller"
 	"github.com/daocloud/crproxy/manager/dao"
@@ -20,6 +19,7 @@ import (
 	"github.com/emicklei/go-restful/v3"
 	"github.com/go-openapi/spec"
 	"github.com/wzshiming/hostmatcher"
+	"github.com/wzshiming/imc"
 )
 
 type Manager struct {
@@ -39,8 +39,8 @@ type Manager struct {
 	RegistryService    *service.RegistryService
 	RegistryController *controller.RegistryController
 
-	tokenCache    *cache.Cache[userKey, responseItem[model.Token]]
-	registryCache *cache.Cache[string, responseItem[registryCache]]
+	tokenCache    *imc.Cache[userKey, responseItem[model.Token]]
+	registryCache *imc.Cache[string, responseItem[registryCache]]
 	cacheTTL      time.Duration
 }
 
@@ -50,8 +50,8 @@ func NewManager(key *rsa.PrivateKey, adminToken string, db *sql.DB) *Manager {
 		adminToken:    adminToken,
 		db:            db,
 		cacheTTL:      10 * time.Second,
-		tokenCache:    cache.NewCache[userKey, responseItem[model.Token]](),
-		registryCache: cache.NewCache[string, responseItem[registryCache]](),
+		tokenCache:    imc.NewCache[userKey, responseItem[model.Token]](),
+		registryCache: imc.NewCache[string, responseItem[registryCache]](),
 	}
 	return m
 }
@@ -114,7 +114,7 @@ func (m *Manager) Register(container *restful.Container) {
 func (m *Manager) getRegistry(ctx context.Context, t *token.Token) (registryCache, error) {
 	up := t.Service
 
-	m.registryCache.Evict()
+	m.registryCache.Evict(nil)
 
 	cached, found := m.registryCache.Get(up)
 	if found {
@@ -123,7 +123,7 @@ func (m *Manager) getRegistry(ctx context.Context, t *token.Token) (registryCach
 
 	registry, err := m.RegistryService.GetByDomain(ctx, t.Service)
 	if err != nil {
-		m.registryCache.Set(up, responseItem[registryCache]{err: err}, m.cacheTTL)
+		m.registryCache.SetWithTTL(up, responseItem[registryCache]{err: err}, m.cacheTTL)
 		return registryCache{}, err
 	}
 
@@ -140,7 +140,7 @@ func (m *Manager) getRegistry(ctx context.Context, t *token.Token) (registryCach
 		rc.ImagesMatcher = hostmatcher.NewMatcher(registry.Data.Allowlist)
 	}
 
-	m.registryCache.Set(up, responseItem[registryCache]{attr: rc}, ttl)
+	m.registryCache.SetWithTTL(up, responseItem[registryCache]{attr: rc}, ttl)
 	return rc, nil
 }
 
@@ -175,7 +175,7 @@ func (m *Manager) getToken(ctx context.Context, userinfo *url.Userinfo, t *token
 		TokenPassword: pwd,
 	}
 
-	m.tokenCache.Evict()
+	m.tokenCache.Evict(nil)
 
 	cached, found := m.tokenCache.Get(up)
 	if found {
@@ -184,7 +184,7 @@ func (m *Manager) getToken(ctx context.Context, userinfo *url.Userinfo, t *token
 
 	tok, err := m.TokenService.GetByAccount(ctx, up.UserID, up.TokenUser, up.TokenPassword)
 	if err != nil {
-		m.tokenCache.Set(up, responseItem[model.Token]{err: err}, m.cacheTTL)
+		m.tokenCache.SetWithTTL(up, responseItem[model.Token]{err: err}, m.cacheTTL)
 		return model.Token{}, err
 	}
 
@@ -193,7 +193,7 @@ func (m *Manager) getToken(ctx context.Context, userinfo *url.Userinfo, t *token
 		ttl = time.Duration(registry.Registry.Data.TTLSecond) * time.Second
 	}
 
-	m.tokenCache.Set(up, responseItem[model.Token]{attr: tok}, ttl)
+	m.tokenCache.SetWithTTL(up, responseItem[model.Token]{attr: tok}, ttl)
 	return tok, nil
 }
 
