@@ -173,12 +173,12 @@ func (c *Gateway) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	}
 
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
-		errcode.ServeJSON(rw, errcode.ErrorCodeUnsupported)
+		utils.ServeError(rw, r, errcode.ErrorCodeUnsupported, 0)
 		return
 	}
 
 	if oriPath == catalog {
-		errcode.ServeJSON(rw, errcode.ErrorCodeUnsupported)
+		utils.ServeError(rw, r, errcode.ErrorCodeUnsupported, 0)
 		return
 	}
 
@@ -209,9 +209,9 @@ func (c *Gateway) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		}
 		if t.Block {
 			if t.BlockMessage != "" {
-				errcode.ServeJSON(rw, errcode.ErrorCodeDenied.WithMessage(t.BlockMessage))
+				utils.ServeError(rw, r, errcode.ErrorCodeDenied.WithMessage(t.BlockMessage), 0)
 			} else {
-				errcode.ServeJSON(rw, errcode.ErrorCodeDenied)
+				utils.ServeError(rw, r, errcode.ErrorCodeDenied, 0)
 			}
 			return
 		}
@@ -219,7 +219,7 @@ func (c *Gateway) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 
 	info, ok := parseOriginPathInfo(oriPath)
 	if !ok {
-		errcode.ServeJSON(rw, errcode.ErrorCodeDenied)
+		utils.ServeError(rw, r, errcode.ErrorCodeDenied, 0)
 		return
 	}
 
@@ -238,14 +238,14 @@ func (c *Gateway) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	}
 
 	if info.Host == "" {
-		errcode.ServeJSON(rw, errcode.ErrorCodeDenied)
+		utils.ServeError(rw, r, errcode.ErrorCodeDenied, 0)
 		return
 	}
 
 	if r.URL.RawQuery != "" {
 		q := r.URL.Query()
 		if ns := q.Get("ns"); ns != "" && ns != info.Host {
-			errcode.ServeJSON(rw, errcode.ErrorCodeDenied)
+			utils.ServeError(rw, r, errcode.ErrorCodeDenied, 0)
 			return
 		}
 	}
@@ -286,7 +286,7 @@ func (c *Gateway) forward(rw http.ResponseWriter, r *http.Request, info *PathInf
 	path, err := info.Path()
 	if err != nil {
 		c.logger.Warn("failed to get path", "error", err)
-		errcode.ServeJSON(rw, errcode.ErrorCodeUnknown)
+		utils.ServeError(rw, r, errcode.ErrorCodeUnknown, 0)
 		return
 	}
 	u := &url.URL{
@@ -297,14 +297,14 @@ func (c *Gateway) forward(rw http.ResponseWriter, r *http.Request, info *PathInf
 	forwardReq, err := http.NewRequestWithContext(r.Context(), r.Method, u.String(), nil)
 	if err != nil {
 		c.logger.Warn("failed to new request", "error", err)
-		errcode.ServeJSON(rw, errcode.ErrorCodeUnknown)
+		utils.ServeError(rw, r, errcode.ErrorCodeUnknown, 0)
 		return
 	}
 
 	resp, err := c.httpClient.Do(forwardReq)
 	if err != nil {
 		c.logger.Warn("failed to request", "host", info.Host, "image", info.Image, "error", err)
-		errcode.ServeJSON(rw, errcode.ErrorCodeUnknown)
+		utils.ServeError(rw, r, errcode.ErrorCodeUnknown, 0)
 		return
 	}
 	defer func() {
@@ -314,7 +314,7 @@ func (c *Gateway) forward(rw http.ResponseWriter, r *http.Request, info *PathInf
 	switch resp.StatusCode {
 	case http.StatusUnauthorized, http.StatusForbidden:
 		c.logger.Warn("origin direct response 40x", "host", info.Host, "image", info.Image, "response", dumpResponse(resp))
-		errcode.ServeJSON(rw, errcode.ErrorCodeDenied)
+		utils.ServeError(rw, r, errcode.ErrorCodeDenied, 0)
 		return
 	}
 
