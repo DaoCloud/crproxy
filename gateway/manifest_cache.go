@@ -51,7 +51,8 @@ func (m *manifestCache) Get(info *PathInfo) (cacheValue, bool) {
 		}
 		if val.Error != nil {
 			return cacheValue{
-				Error: val.Error,
+				Error:      val.Error,
+				StatusCode: val.StatusCode,
 			}, true
 		}
 		key.Tag = val.Digest
@@ -62,7 +63,8 @@ func (m *manifestCache) Get(info *PathInfo) (cacheValue, bool) {
 	}
 	if val.Error != nil {
 		return cacheValue{
-			Error: val.Error,
+			Error:      val.Error,
+			StatusCode: val.StatusCode,
 		}, true
 	}
 
@@ -73,15 +75,17 @@ func (m *manifestCache) Get(info *PathInfo) (cacheValue, bool) {
 	}, true
 }
 
-func (m *manifestCache) PutError(info *PathInfo, err error) {
+func (m *manifestCache) PutError(info *PathInfo, err error, sc int) {
 	key := manifestCacheKey(info)
 	if !info.IsDigestManifests {
 		m.tag.SetWithTTL(key, cacheTagValue{
-			Error: err,
+			Error:      err,
+			StatusCode: sc,
 		}, m.duration)
 	} else {
 		m.digest.SetWithTTL(key, cacheDigestValue{
-			Error: err,
+			Error:      err,
+			StatusCode: sc,
 		}, m.duration)
 	}
 }
@@ -112,21 +116,24 @@ type cacheKey struct {
 }
 
 type cacheTagValue struct {
-	Digest string
-	Error  error
+	Digest     string
+	Error      error
+	StatusCode int
 }
 
 type cacheDigestValue struct {
-	MediaType string
-	Length    string
-	Error     error
+	MediaType  string
+	Length     string
+	Error      error
+	StatusCode int
 }
 
 type cacheValue struct {
-	Digest    string
-	MediaType string
-	Length    string
-	Error     error
+	Digest     string
+	MediaType  string
+	Length     string
+	Error      error
+	StatusCode int
 }
 
 func manifestCacheKey(info *PathInfo) cacheKey {

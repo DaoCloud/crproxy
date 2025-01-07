@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -131,7 +132,7 @@ func (c *Agent) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	}
 
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
-		errcode.ServeJSON(rw, errcode.ErrorCodeUnsupported)
+		utils.ServeError(rw, r, errcode.ErrorCodeUnsupported, 0)
 		return
 	}
 
@@ -157,16 +158,16 @@ func (c *Agent) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	if c.authenticator != nil {
 		t, err = c.authenticator.Authorization(r)
 		if err != nil {
-			errcode.ServeJSON(rw, errcode.ErrorCodeDenied.WithMessage(err.Error()))
+			utils.ServeError(rw, r, errcode.ErrorCodeDenied.WithMessage(err.Error()), 0)
 			return
 		}
 	}
 
 	if t.Block {
 		if t.BlockMessage != "" {
-			errcode.ServeJSON(rw, errcode.ErrorCodeDenied.WithMessage(t.BlockMessage))
+			utils.ServeError(rw, r, errcode.ErrorCodeDenied.WithMessage(t.BlockMessage), 0)
 		} else {
-			errcode.ServeJSON(rw, errcode.ErrorCodeDenied)
+			utils.ServeError(rw, r, errcode.ErrorCodeDenied, 0)
 		}
 		return
 	}
@@ -187,7 +188,7 @@ func (c *Agent) Serve(rw http.ResponseWriter, r *http.Request, info *BlobInfo, t
 			value, ok := c.blobCache.Get(info.Blobs)
 			if ok {
 				if value.Error != nil {
-					errcode.ServeJSON(rw, value.Error)
+					utils.ServeError(rw, r, value.Error, 0)
 					return ctx, true
 				}
 				c.serveCachedBlob(rw, r, info.Blobs, info, t, value.Size, start)
@@ -204,9 +205,10 @@ func (c *Agent) Serve(rw http.ResponseWriter, r *http.Request, info *BlobInfo, t
 			if ctx.Err() != nil {
 				return nil
 			}
-			size, err := c.cacheBlob(info)
+			size, sc, err := c.cacheBlob(info)
 			if err != nil {
-				return err
+				utils.ServeError(rw, r, err, sc)
+				return nil
 			}
 			c.serveCachedBlob(rw, r, info.Blobs, info, t, size, start)
 			return nil
@@ -215,7 +217,7 @@ func (c *Agent) Serve(rw http.ResponseWriter, r *http.Request, info *BlobInfo, t
 	if err != nil {
 		c.logger.Warn("error response", "remoteAddr", r.RemoteAddr, "error", err)
 		c.blobCache.PutError(info.Blobs, err)
-		errcode.ServeJSON(rw, err)
+		utils.ServeError(rw, r, err, 0)
 		return
 	}
 }
@@ -237,7 +239,7 @@ func sleepDuration(ctx context.Context, size, limit float64, start time.Time) er
 	return nil
 }
 
-func (c *Agent) cacheBlob(info *BlobInfo) (int64, error) {
+func (c *Agent) cacheBlob(info *BlobInfo) (int64, int, error) {
 	ctx := context.Background()
 	u := &url.URL{
 		Scheme: "https",
@@ -247,13 +249,15 @@ func (c *Agent) cacheBlob(info *BlobInfo) (int64, error) {
 	forwardReq, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
 		c.logger.Warn("failed to new request", "url", u.String(), "error", err)
-		return 0, err
+		return 0, 0, err
 	}
+
+	forwardReq.Header.Set("Accept", "*/*")
 
 	resp, err := c.httpClient.Do(forwardReq)
 	if err != nil {
 		c.logger.Warn("failed to request", "url", u.String(), "error", err)
-		return 0, errcode.ErrorCodeUnknown
+		return 0, 0, errcode.ErrorCodeUnknown
 	}
 	defer func() {
 		resp.Body.Close()
@@ -261,14 +265,44 @@ func (c *Agent) cacheBlob(info *BlobInfo) (int64, error) {
 
 	switch resp.StatusCode {
 	case http.StatusUnauthorized, http.StatusForbidden:
-		return 0, errcode.ErrorCodeDenied
+		return 0, 0, errcode.ErrorCodeDenied
 	}
 
-	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return 0, errcode.ErrorCodeUnknown.WithMessage(fmt.Sprintf("source response code %d: %s", resp.StatusCode, u.String()))
+	switch resp.StatusCode {
+	case http.StatusUnauthorized, http.StatusForbidden:
+		c.logger.Error("upstream denied", "statusCode", resp.StatusCode, "url", u.String())
+		return 0, 0, errcode.ErrorCodeDenied
+	}
+	if resp.StatusCode < http.StatusOK ||
+		(resp.StatusCode >= http.StatusMultipleChoices && resp.StatusCode < http.StatusBadRequest) {
+		c.logger.Error("upstream unkown code", "statusCode", resp.StatusCode, "url", u.String())
+		return 0, 0, errcode.ErrorCodeUnknown
 	}
 
-	return c.cache.PutBlob(ctx, info.Blobs, resp.Body)
+	if resp.StatusCode >= http.StatusBadRequest {
+		body, err := io.ReadAll(io.LimitReader(resp.Body, 1024*1024))
+		if err != nil {
+			c.logger.Error("failed to get body", "statusCode", resp.StatusCode, "url", u.String(), "error", err)
+			return 0, 0, errcode.ErrorCodeUnknown
+		}
+		if !json.Valid(body) {
+			c.logger.Error("invalid body", "statusCode", resp.StatusCode, "url", u.String(), "body", string(body))
+			return 0, 0, errcode.ErrorCodeDenied
+		}
+		var retErrs errcode.Errors
+		err = retErrs.UnmarshalJSON(body)
+		if err != nil {
+			c.logger.Error("failed to unmarshal body", "statusCode", resp.StatusCode, "url", u.String(), "body", string(body))
+			return 0, 0, errcode.ErrorCodeUnknown
+		}
+		return 0, resp.StatusCode, retErrs
+	}
+
+	size, err := c.cache.PutBlob(ctx, info.Blobs, resp.Body)
+	if err != nil {
+		return 0, 0, err
+	}
+	return size, 0, nil
 }
 
 func (c *Agent) serveCachedBlob(rw http.ResponseWriter, r *http.Request, blob string, info *BlobInfo, t *token.Token, size int64, start time.Time) {
@@ -290,7 +324,7 @@ func (c *Agent) serveCachedBlob(rw http.ResponseWriter, r *http.Request, blob st
 		if err != nil {
 			c.logger.Info("failed to get blob", "digest", blob, "error", err)
 			c.blobCache.Remove(info.Blobs)
-			errcode.ServeJSON(rw, errcode.ErrorCodeUnknown)
+			utils.ServeError(rw, r, errcode.ErrorCodeUnknown, 0)
 			return
 		}
 		defer data.Close()
@@ -312,7 +346,7 @@ func (c *Agent) serveCachedBlob(rw http.ResponseWriter, r *http.Request, blob st
 	if err != nil {
 		c.logger.Info("failed to redirect blob", "digest", blob, "error", err)
 		c.blobCache.Remove(info.Blobs)
-		errcode.ServeJSON(rw, errcode.ErrorCodeUnknown)
+		utils.ServeError(rw, r, errcode.ErrorCodeUnknown, 0)
 		return
 	}
 

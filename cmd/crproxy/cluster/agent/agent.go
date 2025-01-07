@@ -46,7 +46,8 @@ type flagpole struct {
 
 func NewCommand() *cobra.Command {
 	flags := &flagpole{
-		Address: ":18002",
+		Address:           ":18002",
+		BlobCacheDuration: time.Hour,
 	}
 
 	cmd := &cobra.Command{

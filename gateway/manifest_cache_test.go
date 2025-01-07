@@ -21,7 +21,7 @@ func TestManifestCache(t *testing.T) {
 	}
 
 	err := errors.New("test error")
-	cache.PutError(info, err)
+	cache.PutError(info, err, 0)
 	retrievedVal, ok = cache.Get(info)
 	if !ok || retrievedVal.Error == nil {
 		t.Error("Expected an error to be returned")
