@@ -32,7 +32,7 @@ type ImageInfo struct {
 
 type Gateway struct {
 	concurrency int
-	queue       *queue.Queue[PathInfo]
+	queue       *queue.WeightQueue[PathInfo]
 
 	httpClient      *http.Client
 	modify          func(info *ImageInfo) *ImageInfo
@@ -148,7 +148,7 @@ func NewGateway(opts ...Option) (*Gateway, error) {
 		},
 		accepts:               map[string]struct{}{},
 		manifestCacheDuration: time.Minute,
-		queue:                 queue.NewQueue[PathInfo](),
+		queue:                 queue.NewWeightQueue[PathInfo](),
 		concurrency:           10,
 	}
 
