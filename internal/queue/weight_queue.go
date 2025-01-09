@@ -5,9 +5,9 @@ import (
 	"sync"
 )
 
-type Queue[T comparable] struct {
-	queue  *queue[T]
-	queues map[int]*queue[T]
+type WeightQueue[T comparable] struct {
+	queue  *Queue[T]
+	queues map[int]*Queue[T]
 	orders []int
 
 	doneChannel map[T]chan struct{}
@@ -15,17 +15,17 @@ type Queue[T comparable] struct {
 	mut         sync.RWMutex
 }
 
-func NewQueue[T comparable]() *Queue[T] {
-	q := &Queue[T]{
-		queue:       newQueue[T](),
-		queues:      map[int]*queue[T]{},
+func NewWeightQueue[T comparable]() *WeightQueue[T] {
+	q := &WeightQueue[T]{
+		queue:       NewQueue[T](),
+		queues:      map[int]*Queue[T]{},
 		signal:      make(chan struct{}, 1),
 		doneChannel: map[T]chan struct{}{},
 	}
 	return q
 }
 
-func (q *Queue[T]) AddWeight(item T, weight int) <-chan struct{} {
+func (q *WeightQueue[T]) AddWeight(item T, weight int) <-chan struct{} {
 	if weight == 0 {
 		weight = 1
 	}
@@ -36,7 +36,7 @@ func (q *Queue[T]) AddWeight(item T, weight int) <-chan struct{} {
 		q.queue.Add(item)
 	} else {
 		if q.queues[weight] == nil {
-			q.queues[weight] = newQueue[T]()
+			q.queues[weight] = NewQueue[T]()
 		}
 		q.queues[weight].Add(item)
 	}
@@ -56,7 +56,7 @@ func (q *Queue[T]) AddWeight(item T, weight int) <-chan struct{} {
 	return ch
 }
 
-func (q *Queue[T]) step() bool {
+func (q *WeightQueue[T]) step() bool {
 	q.mut.Lock()
 	defer q.mut.Unlock()
 
@@ -88,7 +88,7 @@ func (q *Queue[T]) step() bool {
 	return added
 }
 
-func (q *Queue[T]) get() (T, bool) {
+func (q *WeightQueue[T]) get() (T, bool) {
 	t, ok := q.queue.Get()
 	if ok {
 		return t, ok
@@ -103,7 +103,7 @@ func (q *Queue[T]) get() (T, bool) {
 	return t, false
 }
 
-func (q *Queue[T]) Get() (T, func(), bool) {
+func (q *WeightQueue[T]) Get() (T, func(), bool) {
 	t, ok := q.get()
 	if !ok {
 		return t, nil, false
@@ -121,7 +121,7 @@ func (q *Queue[T]) Get() (T, func(), bool) {
 	return t, fun, true
 }
 
-func (q *Queue[T]) GetOrWaitWithDone(done <-chan struct{}) (T, func(), bool) {
+func (q *WeightQueue[T]) GetOrWaitWithDone(done <-chan struct{}) (T, func(), bool) {
 	t, finish, ok := q.Get()
 	if ok {
 		return t, finish, ok
@@ -141,7 +141,7 @@ func (q *Queue[T]) GetOrWaitWithDone(done <-chan struct{}) (T, func(), bool) {
 	}
 }
 
-func (q *Queue[T]) Len() int {
+func (q *WeightQueue[T]) Len() int {
 	size := q.queue.Len()
 
 	q.mut.RLock()
