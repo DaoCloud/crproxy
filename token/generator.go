@@ -47,7 +47,7 @@ func (g *Generator) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	rw.Header().Set("Content-Type", "application/json")
 
 	now := time.Now()
-	expiresIn := 60
+	expiresIn := 3600
 
 	t.ExpiresAt = now.Add((time.Duration(expiresIn) + 10) * time.Second)
 
