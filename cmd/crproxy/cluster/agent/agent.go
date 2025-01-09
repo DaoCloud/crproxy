@@ -42,12 +42,15 @@ type flagpole struct {
 
 	BlobsLENoAgent    int
 	BlobCacheDuration time.Duration
+
+	Concurrency int
 }
 
 func NewCommand() *cobra.Command {
 	flags := &flagpole{
 		Address:           ":18002",
 		BlobCacheDuration: time.Hour,
+		Concurrency:       10,
 	}
 
 	cmd := &cobra.Command{
@@ -78,6 +81,8 @@ func NewCommand() *cobra.Command {
 
 	cmd.Flags().IntVar(&flags.BlobsLENoAgent, "blobs-le-no-agent", flags.BlobsLENoAgent, "Less than or equal to No Agent")
 	cmd.Flags().DurationVar(&flags.BlobCacheDuration, "blob-cache-duration", flags.BlobCacheDuration, "Blob cache duration")
+
+	cmd.Flags().IntVar(&flags.Concurrency, "concurrency", flags.Concurrency, "Concurrency to source")
 	return cmd
 }
 
@@ -117,6 +122,7 @@ func runE(ctx context.Context, flags *flagpole) error {
 		agent.WithLogger(logger),
 		agent.WithBlobsLENoAgent(flags.BlobsLENoAgent),
 		agent.WithBlobCacheDuration(flags.BlobCacheDuration),
+		agent.WithConcurrency(flags.Concurrency),
 	)
 
 	if flags.TokenPublicKeyFile != "" {
