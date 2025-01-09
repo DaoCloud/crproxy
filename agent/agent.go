@@ -32,12 +32,19 @@ type BlobInfo struct {
 	Blobs string
 }
 
+type bigBlob struct {
+	ContinueFunc func() error
+	Finish       func()
+	Info         BlobInfo
+}
+
 type Agent struct {
-	concurrency int
-	queue       *queue.Queue[BlobInfo]
-	httpClient  *http.Client
-	logger      *slog.Logger
-	cache       *cache.Cache
+	concurrency  int
+	queue        *queue.WeightQueue[BlobInfo]
+	bigBlobQueue *queue.Queue[*bigBlob]
+	httpClient   *http.Client
+	logger       *slog.Logger
+	cache        *cache.Cache
 
 	blobCacheDuration time.Duration
 	blobCache         *blobCache
@@ -108,7 +115,8 @@ func NewAgent(opts ...Option) (*Agent, error) {
 		logger:            slog.Default(),
 		httpClient:        http.DefaultClient,
 		blobCacheDuration: time.Hour,
-		queue:             queue.NewQueue[BlobInfo](),
+		queue:             queue.NewWeightQueue[BlobInfo](),
+		bigBlobQueue:      queue.NewQueue[*bigBlob](),
 		concurrency:       10,
 	}
 
@@ -123,6 +131,7 @@ func NewAgent(opts ...Option) (*Agent, error) {
 
 	for i := 0; i <= c.concurrency; i++ {
 		go c.worker(ctx)
+		go c.bigBlobWorker(ctx)
 	}
 
 	return c, nil
@@ -154,11 +163,45 @@ func (c *Agent) worker(ctx context.Context) {
 		if !ok {
 			return
 		}
-		sc, err := c.cacheBlob(&info)
+		size, continueFunc, sc, err := c.cacheBlob(&info)
 		if err != nil {
+			c.logger.Warn("failed download file request", "info", info, "error", err)
 			c.blobCache.PutError(info.Blobs, err, sc)
+			finish()
+		} else if size < 20*1024*1024 {
+			err := continueFunc()
+			if err != nil {
+				c.logger.Warn("failed download file", "info", info, "error", err)
+				c.blobCache.PutError(info.Blobs, err, 0)
+			} else {
+				c.logger.Info("finish download file", "info", info)
+			}
+			finish()
+		} else {
+			c.logger.Warn("add download big file", "info", info, "size", size)
+			c.bigBlobQueue.Add(&bigBlob{
+				ContinueFunc: continueFunc,
+				Finish:       finish,
+				Info:         info,
+			})
 		}
-		finish()
+	}
+}
+
+func (c *Agent) bigBlobWorker(ctx context.Context) {
+	for {
+		bb, ok := c.bigBlobQueue.GetOrWaitWithDone(ctx.Done())
+		if !ok {
+			return
+		}
+		err := bb.ContinueFunc()
+		if err != nil {
+			c.logger.Warn("failed download big file", "info", bb.Info, "error", err)
+			c.blobCache.PutError(bb.Info.Blobs, err, 0)
+		} else {
+			c.logger.Info("finish download big file", "info", bb.Info)
+		}
+		bb.Finish()
 	}
 }
 
@@ -239,7 +282,7 @@ func (c *Agent) Serve(rw http.ResponseWriter, r *http.Request, info *BlobInfo, t
 
 	stat, err := c.cache.StatBlob(ctx, info.Blobs)
 	if err == nil {
-		if c.serveCachedBlobHead(rw, r, value.Size) {
+		if c.serveCachedBlobHead(rw, r, stat.Size()) {
 			return
 		}
 
@@ -270,7 +313,7 @@ func (c *Agent) Serve(rw http.ResponseWriter, r *http.Request, info *BlobInfo, t
 
 	stat, err = c.cache.StatBlob(ctx, info.Blobs)
 	if err == nil {
-		if c.serveCachedBlobHead(rw, r, value.Size) {
+		if c.serveCachedBlobHead(rw, r, stat.Size()) {
 			return
 		}
 		c.serveCachedBlob(rw, r, info.Blobs, info, t, stat.Size())
@@ -298,7 +341,7 @@ func sleepDuration(ctx context.Context, size, limit float64, start time.Time) er
 	return nil
 }
 
-func (c *Agent) cacheBlob(info *BlobInfo) (int, error) {
+func (c *Agent) cacheBlob(info *BlobInfo) (int64, func() error, int, error) {
 	ctx := context.Background()
 	u := &url.URL{
 		Scheme: "https",
@@ -308,7 +351,7 @@ func (c *Agent) cacheBlob(info *BlobInfo) (int, error) {
 	forwardReq, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
 		c.logger.Warn("failed to new request", "url", u.String(), "error", err)
-		return 0, err
+		return 0, nil, 0, err
 	}
 
 	forwardReq.Header.Set("Accept", "*/*")
@@ -317,57 +360,62 @@ func (c *Agent) cacheBlob(info *BlobInfo) (int, error) {
 	if err != nil {
 		var tErr *transport.Error
 		if errors.As(err, &tErr) {
-			return http.StatusForbidden, errcode.ErrorCodeDenied
+			return 0, nil, http.StatusForbidden, errcode.ErrorCodeDenied
 		}
 		c.logger.Warn("failed to request", "url", u.String(), "error", err)
-		return 0, errcode.ErrorCodeUnknown
+		return 0, nil, 0, errcode.ErrorCodeUnknown
 	}
-	defer func() {
+
+	switch resp.StatusCode {
+	case http.StatusUnauthorized, http.StatusForbidden:
 		resp.Body.Close()
-	}()
-
-	switch resp.StatusCode {
-	case http.StatusUnauthorized, http.StatusForbidden:
-		return 0, errcode.ErrorCodeDenied
+		return 0, nil, 0, errcode.ErrorCodeDenied
 	}
 
 	switch resp.StatusCode {
 	case http.StatusUnauthorized, http.StatusForbidden:
+		resp.Body.Close()
 		c.logger.Error("upstream denied", "statusCode", resp.StatusCode, "url", u.String())
-		return 0, errcode.ErrorCodeDenied
+		return 0, nil, 0, errcode.ErrorCodeDenied
 	}
 	if resp.StatusCode < http.StatusOK ||
 		(resp.StatusCode >= http.StatusMultipleChoices && resp.StatusCode < http.StatusBadRequest) {
+		resp.Body.Close()
 		c.logger.Error("upstream unkown code", "statusCode", resp.StatusCode, "url", u.String())
-		return 0, errcode.ErrorCodeUnknown
+		return 0, nil, 0, errcode.ErrorCodeUnknown
 	}
 
 	if resp.StatusCode >= http.StatusBadRequest {
 		body, err := io.ReadAll(io.LimitReader(resp.Body, 1024*1024))
+		resp.Body.Close()
 		if err != nil {
 			c.logger.Error("failed to get body", "statusCode", resp.StatusCode, "url", u.String(), "error", err)
-			return 0, errcode.ErrorCodeUnknown
+			return 0, nil, 0, errcode.ErrorCodeUnknown
 		}
 		if !json.Valid(body) {
 			c.logger.Error("invalid body", "statusCode", resp.StatusCode, "url", u.String(), "body", string(body))
-			return 0, errcode.ErrorCodeDenied
+			return 0, nil, 0, errcode.ErrorCodeDenied
 		}
 		var retErrs errcode.Errors
 		err = retErrs.UnmarshalJSON(body)
 		if err != nil {
 			c.logger.Error("failed to unmarshal body", "statusCode", resp.StatusCode, "url", u.String(), "body", string(body))
-			return 0, errcode.ErrorCodeUnknown
+			return 0, nil, 0, errcode.ErrorCodeUnknown
 		}
-		return resp.StatusCode, retErrs
+		return 0, nil, resp.StatusCode, retErrs
 	}
 
-	size, err := c.cache.PutBlob(ctx, info.Blobs, resp.Body)
-	if err != nil {
-		return 0, err
+	continueFunc := func() error {
+		defer resp.Body.Close()
+		size, err := c.cache.PutBlob(ctx, info.Blobs, resp.Body)
+		if err != nil {
+			return err
+		}
+		c.blobCache.Put(info.Blobs, size)
+		return nil
 	}
-	c.blobCache.Put(info.Blobs, size)
 
-	return 0, nil
+	return resp.ContentLength, continueFunc, 0, nil
 }
 
 func (c *Agent) rateLimit(rw http.ResponseWriter, r *http.Request, blob string, info *BlobInfo, t *token.Token, size int64, start time.Time) {
