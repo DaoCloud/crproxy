@@ -34,7 +34,20 @@ func (c *Cache) RelinkManifest(ctx context.Context, host, image, tag string, blo
 	return nil
 }
 
-func (c *Cache) PutManifestContent(ctx context.Context, host, image, tagOrBlob string, content []byte) (int64, string, error) {
+func (c *Cache) PutManifestContent(ctx context.Context, host, image, tagOrBlob string, content []byte) (int64, string, string, error) {
+	mt := struct {
+		MediaType string `json:"mediaType"`
+	}{}
+	err := json.Unmarshal(content, &mt)
+	if err != nil {
+		return 0, "", "", fmt.Errorf("invalid content: %w: %s", err, string(content))
+	}
+
+	mediaType := mt.MediaType
+	if mediaType == "" {
+		mediaType = "application/vnd.docker.distribution.manifest.v1+json"
+	}
+
 	h := sha256.New()
 	h.Write(content)
 	hash := hex.EncodeToString(h.Sum(nil)[:])
@@ -43,27 +56,27 @@ func (c *Cache) PutManifestContent(ctx context.Context, host, image, tagOrBlob s
 	if isHash {
 		tagOrBlob = tagOrBlob[7:]
 		if tagOrBlob != hash {
-			return 0, "", fmt.Errorf("expected hash %s is not same to %s", tagOrBlob, hash)
+			return 0, "", "", fmt.Errorf("expected hash %s is not same to %s", tagOrBlob, hash)
 		}
 	} else {
 		manifestLinkPath := manifestTagCachePath(host, image, tagOrBlob)
 		err := c.PutContent(ctx, manifestLinkPath, []byte("sha256:"+hash))
 		if err != nil {
-			return 0, "", fmt.Errorf("put manifest link path %s error: %w", manifestLinkPath, err)
+			return 0, "", "", fmt.Errorf("put manifest link path %s error: %w", manifestLinkPath, err)
 		}
 	}
 
 	manifestLinkPath := manifestRevisionsCachePath(host, image, hash)
-	err := c.PutContent(ctx, manifestLinkPath, []byte("sha256:"+hash))
+	err = c.PutContent(ctx, manifestLinkPath, []byte("sha256:"+hash))
 	if err != nil {
-		return 0, "", fmt.Errorf("put manifest revisions path %s error: %w", manifestLinkPath, err)
+		return 0, "", "", fmt.Errorf("put manifest revisions path %s error: %w", manifestLinkPath, err)
 	}
 
 	n, err := c.PutBlobContent(ctx, hash, content)
 	if err != nil {
-		return 0, "", fmt.Errorf("put manifest blob path %s error: %w", hash, err)
+		return 0, "", "", fmt.Errorf("put manifest blob path %s error: %w", hash, err)
 	}
-	return n, hash, nil
+	return n, hash, mediaType, nil
 }
 
 func (c *Cache) GetManifestContent(ctx context.Context, host, image, tagOrBlob string) ([]byte, string, string, error) {

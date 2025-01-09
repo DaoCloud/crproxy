@@ -1,0 +1,86 @@
+package queue
+
+import (
+	"container/list"
+	"sync"
+)
+
+// queue is a generic Queue implementation.
+type queue[T any] struct {
+	base *list.List
+
+	signal chan struct{}
+	mut    sync.RWMutex
+}
+
+func newQueue[T any]() *queue[T] {
+	return &queue[T]{
+		base:   list.New(),
+		signal: make(chan struct{}, 1),
+	}
+}
+
+func (q *queue[T]) Add(item T) {
+	q.mut.Lock()
+	q.base.PushBack(item)
+	q.mut.Unlock()
+
+	// Signal that an item was added.
+	select {
+	case q.signal <- struct{}{}:
+	default:
+	}
+}
+
+func (q *queue[T]) Get() (t T, ok bool) {
+	q.mut.Lock()
+	defer q.mut.Unlock()
+	item := q.base.Front()
+	if item == nil {
+		return t, false
+	}
+	q.base.Remove(item)
+	return item.Value.(T), true
+}
+
+func (q *queue[T]) GetOrWait() T {
+	t, ok := q.Get()
+	if ok {
+		return t
+	}
+
+	// Wait for an item to be added.
+	for range q.signal {
+		t, ok = q.Get()
+		if ok {
+			return t
+		}
+	}
+	panic("unreachable")
+}
+
+func (q *queue[T]) GetOrWaitWithDone(done <-chan struct{}) (T, bool) {
+	t, ok := q.Get()
+	if ok {
+		return t, ok
+	}
+
+	// Wait for an item to be added.
+	for {
+		select {
+		case <-done:
+			return t, false
+		case <-q.signal:
+			t, ok = q.Get()
+			if ok {
+				return t, true
+			}
+		}
+	}
+}
+
+func (q *queue[T]) Len() int {
+	q.mut.RLock()
+	defer q.mut.RUnlock()
+	return q.base.Len()
+}
