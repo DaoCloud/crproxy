@@ -13,7 +13,7 @@ import (
 
 	"github.com/daocloud/crproxy/agent"
 	"github.com/daocloud/crproxy/cache"
-	"github.com/daocloud/crproxy/internal/unique"
+	"github.com/daocloud/crproxy/internal/queue"
 	"github.com/daocloud/crproxy/internal/utils"
 	"github.com/daocloud/crproxy/token"
 	"github.com/docker/distribution/registry/api/errcode"
@@ -31,7 +31,9 @@ type ImageInfo struct {
 }
 
 type Gateway struct {
-	uniq            unique.Unique[cacheKey]
+	concurrency int
+	queue       *queue.Queue[PathInfo]
+
 	httpClient      *http.Client
 	modify          func(info *ImageInfo) *ImageInfo
 	logger          *slog.Logger
@@ -63,9 +65,12 @@ func WithClient(client *http.Client) Option {
 	}
 }
 
-func WithManifestCacheDuration(d time.Duration) Option {
+func WithManifestCacheDuration(manifestCacheDuration time.Duration) Option {
 	return func(c *Gateway) {
-		c.manifestCacheDuration = d
+		if manifestCacheDuration < 10*time.Second {
+			manifestCacheDuration = 10 * time.Second
+		}
+		c.manifestCacheDuration = manifestCacheDuration
 	}
 }
 
@@ -123,6 +128,15 @@ func WithOverrideDefaultRegistry(overrideDefaultRegistry map[string]string) Opti
 	}
 }
 
+func WithConcurrency(concurrency int) Option {
+	return func(c *Gateway) {
+		if concurrency < 1 {
+			concurrency = 1
+		}
+		c.concurrency = concurrency
+	}
+}
+
 func NewGateway(opts ...Option) (*Gateway, error) {
 	c := &Gateway{
 		logger: slog.Default(),
@@ -134,6 +148,8 @@ func NewGateway(opts ...Option) (*Gateway, error) {
 		},
 		accepts:               map[string]struct{}{},
 		manifestCacheDuration: time.Minute,
+		queue:                 queue.NewQueue[PathInfo](),
+		concurrency:           10,
 	}
 
 	for _, item := range c.acceptsItems {
@@ -152,6 +168,7 @@ func NewGateway(opts ...Option) (*Gateway, error) {
 			agent.WithLogger(c.logger),
 			agent.WithCache(c.cache),
 			agent.WithBlobsLENoAgent(c.blobsLENoAgent),
+			agent.WithConcurrency(c.concurrency),
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create agent: %w", err)
@@ -159,9 +176,14 @@ func NewGateway(opts ...Option) (*Gateway, error) {
 		c.agent = a
 	}
 
+	ctx := context.Background()
 	c.manifestCache = newManifestCache(c.manifestCacheDuration)
+	c.manifestCache.Start(ctx, c.logger)
 
-	c.manifestCache.Start(context.Background(), c.logger)
+	for i := 0; i <= c.concurrency; i++ {
+		go c.worker(ctx)
+	}
+
 	return c, nil
 }
 
@@ -275,7 +297,7 @@ func (c *Gateway) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 
 	if info.Manifests != "" {
 		if c.cache != nil {
-			c.cacheManifestResponse(rw, r, info)
+			c.cacheManifestResponse(rw, r, info, &t)
 			return
 		}
 	}

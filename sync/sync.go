@@ -255,7 +255,7 @@ func (c *SyncManager) Image(ctx context.Context, image string) error {
 		}
 
 		for _, cache := range caches {
-			_, _, err = cache.PutManifestContent(ctx, host, path, tagOrHash, playload)
+			_, _, _, err = cache.PutManifestContent(ctx, host, path, tagOrHash, playload)
 			if err != nil {
 				return fmt.Errorf("put manifest content failed: %w", err)
 			}

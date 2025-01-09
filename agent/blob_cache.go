@@ -40,9 +40,10 @@ func (m *blobCache) Remove(key string) {
 	m.digest.Remove(key)
 }
 
-func (m *blobCache) PutError(key string, err error) {
+func (m *blobCache) PutError(key string, err error, sc int) {
 	m.digest.SetWithTTL(key, blobValue{
-		Error: err,
+		Error:      err,
+		StatusCode: sc,
 	}, m.duration)
 }
 
@@ -53,6 +54,7 @@ func (m *blobCache) Put(key string, size int64) {
 }
 
 type blobValue struct {
-	Size  int64
-	Error error
+	Size       int64
+	Error      error
+	StatusCode int
 }
