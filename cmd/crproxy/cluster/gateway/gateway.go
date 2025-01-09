@@ -50,11 +50,14 @@ type flagpole struct {
 	OverrideDefaultRegistry map[string]string
 
 	RegistryAlias map[string]string
+
+	Concurrency int
 }
 
 func NewCommand() *cobra.Command {
 	flags := &flagpole{
-		Address: ":18001",
+		Address:     ":18001",
+		Concurrency: 10,
 	}
 
 	cmd := &cobra.Command{
@@ -91,6 +94,8 @@ func NewCommand() *cobra.Command {
 	cmd.Flags().StringVar(&flags.DefaultRegistry, "default-registry", flags.DefaultRegistry, "default registry used for non full-path docker pull, like:docker.io")
 	cmd.Flags().StringToStringVar(&flags.OverrideDefaultRegistry, "override-default-registry", flags.OverrideDefaultRegistry, "override default registry")
 	cmd.Flags().StringToStringVar(&flags.RegistryAlias, "registry-alias", flags.RegistryAlias, "registry alias")
+
+	cmd.Flags().IntVar(&flags.Concurrency, "concurrency", flags.Concurrency, "Concurrency to source")
 	return cmd
 }
 
