@@ -169,6 +169,8 @@ github.com/wzshiming/geario v0.0.0-20240308093553-a996e3817533 h1:mq74wxgDCz7Q6C
 github.com/wzshiming/geario v0.0.0-20240308093553-a996e3817533/go.mod h1:Fodw3HJvNUS+/MgqXCRp9iYLQfynAu/LKXGOWoX+D/Q=
 github.com/wzshiming/hostmatcher v0.0.3 h1:+JYAq6vUZXDEQ1Ipfdc/D7HmaIMngcc71ftonyCQVQk=
 github.com/wzshiming/hostmatcher v0.0.3/go.mod h1:F04RIvIWEvOIrIKOlQlMuR8vQMKAVf2YhpU6l31Wwz4=
+github.com/wzshiming/httpseek v0.1.0 h1:lEgL7EBELT/VV9UaTp+m3kw5Pe1KOUdY+IPnKkag6tI=
+github.com/wzshiming/httpseek v0.1.0/go.mod h1:YoZhlLIwNjTBDXIT8NpK5zRjOgZouRXPaBfjVXdqMMs=
 github.com/wzshiming/imc v0.0.0-20250106051804-1cb884b5184a h1:yUonFTTPA3PrOz4J1RTvK7gbTn+iiwX6VAJdNCCu3is=
 github.com/wzshiming/imc v0.0.0-20250106051804-1cb884b5184a/go.mod h1:U4qkQ1uQB16r15JFVbbTmevsVJnqBz9p/sHdIThCs/A=
 github.com/wzshiming/trie v0.3.1 h1:YpuoqmEQFJiW0mns/mM6Qk4kdWrXc8kc28/KR1vn0m8=

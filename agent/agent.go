@@ -39,12 +39,14 @@ type bigBlob struct {
 }
 
 type Agent struct {
-	concurrency  int
-	queue        *queue.WeightQueue[BlobInfo]
-	bigBlobQueue *queue.Queue[*bigBlob]
-	httpClient   *http.Client
-	logger       *slog.Logger
-	cache        *cache.Cache
+	concurrency int
+	queue       *queue.WeightQueue[BlobInfo]
+
+	groupQueue []*queue.WeightQueue[*bigBlob]
+
+	httpClient *http.Client
+	logger     *slog.Logger
+	cache      *cache.Cache
 
 	blobCacheDuration time.Duration
 	blobCache         *blobCache
@@ -116,7 +118,7 @@ func NewAgent(opts ...Option) (*Agent, error) {
 		httpClient:        http.DefaultClient,
 		blobCacheDuration: time.Hour,
 		queue:             queue.NewWeightQueue[BlobInfo](),
-		bigBlobQueue:      queue.NewQueue[*bigBlob](),
+		groupQueue:        make([]*queue.WeightQueue[*bigBlob], 4),
 		concurrency:       10,
 	}
 
@@ -131,7 +133,24 @@ func NewAgent(opts ...Option) (*Agent, error) {
 
 	for i := 0; i <= c.concurrency; i++ {
 		go c.worker(ctx)
-		go c.bigBlobWorker(ctx)
+	}
+
+	for i := range c.groupQueue {
+		q := queue.NewWeightQueue[*bigBlob]()
+		c.groupQueue[i] = q
+		go c.downloadBlobWorker(ctx, q)
+	}
+
+	for i := 0; i <= c.concurrency*8/10; i++ {
+		q := queue.NewWeightQueue[*bigBlob]()
+		c.groupQueue[0] = q
+		go c.downloadBlobWorker(ctx, q)
+	}
+
+	for i := 0; i <= c.concurrency*1/10; i++ {
+		q := queue.NewWeightQueue[*bigBlob]()
+		c.groupQueue[1] = q
+		go c.downloadBlobWorker(ctx, q)
 	}
 
 	return c, nil
@@ -159,7 +178,7 @@ func parsePath(path string) (string, string, string, bool) {
 
 func (c *Agent) worker(ctx context.Context) {
 	for {
-		info, finish, ok := c.queue.GetOrWaitWithDone(ctx.Done())
+		info, weight, finish, ok := c.queue.GetOrWaitWithDone(ctx.Done())
 		if !ok {
 			return
 		}
@@ -168,39 +187,36 @@ func (c *Agent) worker(ctx context.Context) {
 			c.logger.Warn("failed download file request", "info", info, "error", err)
 			c.blobCache.PutError(info.Blobs, err, sc)
 			finish()
-		} else if size < 20*1024*1024 {
-			err := continueFunc()
-			if err != nil {
-				c.logger.Warn("failed download file", "info", info, "error", err)
-				c.blobCache.PutError(info.Blobs, err, 0)
-			} else {
-				c.logger.Info("finish download file", "info", info)
-			}
-			finish()
-		} else {
-			c.logger.Warn("add download big file", "info", info, "size", size)
-			c.bigBlobQueue.Add(&bigBlob{
-				ContinueFunc: continueFunc,
-				Finish:       finish,
-				Info:         info,
-			})
+			continue
 		}
+
+		group, ew := sizeToGroupAndWeight(size)
+		if group >= uint(len(c.groupQueue)) {
+			group = uint(len(c.groupQueue)) - 1
+		}
+
+		c.groupQueue[group].AddWeight(&bigBlob{
+			ContinueFunc: continueFunc,
+			Finish:       finish,
+			Info:         info,
+		}, weight+ew)
 	}
 }
 
-func (c *Agent) bigBlobWorker(ctx context.Context) {
+func (c *Agent) downloadBlobWorker(ctx context.Context, queue *queue.WeightQueue[*bigBlob]) {
 	for {
-		bb, ok := c.bigBlobQueue.GetOrWaitWithDone(ctx.Done())
+		bb, _, finish, ok := queue.GetOrWaitWithDone(ctx.Done())
 		if !ok {
 			return
 		}
 		err := bb.ContinueFunc()
 		if err != nil {
-			c.logger.Warn("failed download big file", "info", bb.Info, "error", err)
+			c.logger.Warn("failed download file", "info", bb.Info, "error", err)
 			c.blobCache.PutError(bb.Info.Blobs, err, 0)
 		} else {
-			c.logger.Info("finish download big file", "info", bb.Info)
+			c.logger.Info("finish download file", "info", bb.Info)
 		}
+		finish()
 		bb.Finish()
 	}
 }

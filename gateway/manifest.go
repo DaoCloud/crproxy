@@ -18,7 +18,7 @@ import (
 
 func (c *Gateway) worker(ctx context.Context) {
 	for {
-		info, finish, ok := c.queue.GetOrWaitWithDone(ctx.Done())
+		info, _, finish, ok := c.queue.GetOrWaitWithDone(ctx.Done())
 		if !ok {
 			return
 		}

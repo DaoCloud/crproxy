@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -19,6 +20,7 @@ import (
 	"github.com/daocloud/crproxy/transport"
 	"github.com/gorilla/handlers"
 	"github.com/spf13/cobra"
+	"github.com/wzshiming/httpseek"
 )
 
 type flagpole struct {
@@ -147,6 +149,23 @@ func runE(ctx context.Context, flags *flagpole) error {
 	tp, err := transport.NewTransport(transportOpts...)
 	if err != nil {
 		return fmt.Errorf("create clientset failed: %w", err)
+	}
+
+	if flags.RetryInterval > 0 {
+		tp = httpseek.NewMustReaderTransport(tp, func(request *http.Request, retry int, err error) error {
+			if errors.Is(err, context.Canceled) ||
+				errors.Is(err, context.DeadlineExceeded) {
+				return err
+			}
+			if flags.Retry > 0 && retry >= flags.Retry {
+				return err
+			}
+			if logger != nil {
+				logger.Warn("Retry", "url", request.URL, "retry", retry, "error", err)
+			}
+			time.Sleep(flags.RetryInterval)
+			return nil
+		})
 	}
 
 	tp = transport.NewLogTransport(tp, logger, time.Minute)

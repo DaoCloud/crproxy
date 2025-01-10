@@ -6,23 +6,27 @@ import (
 )
 
 // Queue is a generic Queue implementation.
-type Queue[T any] struct {
+type Queue[T comparable] struct {
 	base *list.List
+
+	index map[T]*list.Element
 
 	signal chan struct{}
 	mut    sync.RWMutex
 }
 
-func NewQueue[T any]() *Queue[T] {
+func NewQueue[T comparable]() *Queue[T] {
 	return &Queue[T]{
 		base:   list.New(),
+		index:  map[T]*list.Element{},
 		signal: make(chan struct{}, 1),
 	}
 }
 
 func (q *Queue[T]) Add(item T) {
 	q.mut.Lock()
-	q.base.PushBack(item)
+	element := q.base.PushBack(item)
+	q.index[item] = element
 	q.mut.Unlock()
 
 	// Signal that an item was added.
@@ -40,7 +44,20 @@ func (q *Queue[T]) Get() (t T, ok bool) {
 		return t, false
 	}
 	q.base.Remove(item)
-	return item.Value.(T), true
+	t = item.Value.(T)
+	delete(q.index, t)
+	return t, true
+}
+
+func (q *Queue[T]) Remove(item T) bool {
+	q.mut.Lock()
+	defer q.mut.Unlock()
+	if element, exists := q.index[item]; exists {
+		q.base.Remove(element)
+		delete(q.index, item)
+		return true
+	}
+	return false
 }
 
 func (q *Queue[T]) GetOrWait() T {
