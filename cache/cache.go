@@ -6,8 +6,10 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/url"
+	"path"
 	"sync"
 	"time"
 
@@ -152,4 +154,47 @@ func (c *Cache) GetContent(ctx context.Context, cachePath string) ([]byte, error
 
 func (c *Cache) Stat(ctx context.Context, cachePath string) (storagedriver.FileInfo, error) {
 	return c.storageDriver.Stat(ctx, cachePath)
+}
+
+func (c *Cache) Walk(ctx context.Context, cachePath string, fun fs.WalkDirFunc) error {
+	return c.storageDriver.Walk(ctx, cachePath, func(fi storagedriver.FileInfo) error {
+		p := fi.Path()
+		fiw := fileInfoWrap{
+			name:     path.Base(p),
+			FileInfo: fi,
+		}
+
+		return fun(path.Dir(p), fiw, nil)
+	})
+}
+
+func (c *Cache) List(ctx context.Context, cachePath string) ([]string, error) {
+	return c.storageDriver.List(ctx, cachePath)
+}
+
+type fileInfoWrap struct {
+	name string
+	storagedriver.FileInfo
+}
+
+var _ fs.DirEntry = (*fileInfoWrap)(nil)
+
+func (f fileInfoWrap) Name() string {
+	return f.name
+}
+
+func (fileInfoWrap) Mode() fs.FileMode {
+	return 0666
+}
+
+func (fileInfoWrap) Type() fs.FileMode {
+	return 0
+}
+
+func (fileInfoWrap) Sys() any {
+	return nil
+}
+
+func (f fileInfoWrap) Info() (fs.FileInfo, error) {
+	return f, nil
 }

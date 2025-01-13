@@ -5,12 +5,16 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math/rand"
 	"net/http"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 
 	"github.com/daocloud/crproxy/cache"
+	"github.com/daocloud/crproxy/internal/sets"
+	"github.com/daocloud/crproxy/internal/slices"
 	"github.com/daocloud/crproxy/internal/utils"
 	"github.com/distribution/reference"
 	"github.com/docker/distribution"
@@ -43,8 +47,9 @@ type SyncManager struct {
 	caches    []*cache.Cache
 	logger    *slog.Logger
 	deep      bool
+	quick     bool
 
-	uniq           map[digest.Digest]struct{}
+	uniq           *sets.Set[digest.Digest]
 	excludeTags    []*regexp.Regexp
 	filterPlatform func(pf manifestlist.PlatformSpec) bool
 }
@@ -54,6 +59,12 @@ type Option func(*SyncManager)
 func WithDeep(deep bool) Option {
 	return func(c *SyncManager) {
 		c.deep = deep
+	}
+}
+
+func WithQuick(quick bool) Option {
+	return func(c *SyncManager) {
+		c.quick = quick
 	}
 }
 
@@ -91,7 +102,7 @@ func NewSyncManager(opts ...Option) (*SyncManager, error) {
 	c := &SyncManager{
 		logger:    slog.Default(),
 		transport: http.DefaultTransport,
-		uniq:      map[digest.Digest]struct{}{},
+		uniq:      sets.NewSet[digest.Digest](),
 	}
 	for _, opt := range opts {
 		opt(c)
@@ -153,12 +164,12 @@ func (c *SyncManager) Image(ctx context.Context, image string) error {
 	bs := repo.Blobs(ctx)
 
 	blobCallback := func(caches []*cache.Cache, dgst digest.Digest, size int64, pf *manifestlist.PlatformSpec, name string) error {
-		_, ok := c.uniq[dgst]
-		if ok {
+		if c.uniq.Contains(dgst) {
 			c.logger.Info("skip blob by unique", "image", image, "digest", dgst)
 			return nil
 		}
-		c.uniq[dgst] = struct{}{}
+		c.uniq.Add(dgst)
+
 		blob := dgst.String()
 
 		var subCaches []*cache.Cache
@@ -253,6 +264,7 @@ func (c *SyncManager) Image(ctx context.Context, image string) error {
 
 	switch ref.(type) {
 	case reference.Digested, reference.Tagged:
+		c.logger.Info("Start sync", "image", image)
 		err = c.syncLayerFromManifestList(ctx, host, path, image, ms, ts, ref, blobCallback, manifestCallback, host+"/"+ref.String())
 		if err != nil {
 			return fmt.Errorf("sync layer from manifest list failed: %w", err)
@@ -263,21 +275,52 @@ func (c *SyncManager) Image(ctx context.Context, image string) error {
 			return fmt.Errorf("get tags failed: %w", err)
 		}
 
-	loop:
-		for _, tag := range tags {
+		tags = slices.Filter(tags, func(tag string) bool {
 			if regexTag != nil && !regexTag.MatchString(tag) {
-				c.logger.Info("skip manifest by filter tag", "image", image, "tag", tag)
-				continue
+				return false
 			}
 
 			if len(c.excludeTags) != 0 {
 				for _, reg := range c.excludeTags {
 					if reg.MatchString(tag) {
-						c.logger.Info("skip manifest by filter exclude tag", "image", image, "tag", tag)
-						continue loop
+						return false
 					}
 				}
 			}
+
+			return true
+		})
+
+		if c.quick {
+			cacheTags := sets.NewSet[string]()
+			for i, cache := range c.caches {
+				tags, err := cache.ListTags(ctx, host, path)
+				if err != nil {
+					return fmt.Errorf("failed to list tags: %w", err)
+				}
+
+				if i == 0 {
+					cacheTags.Add(tags...)
+				} else {
+					cacheTags.Intersection(sets.NewSet(tags...))
+				}
+			}
+
+			sourceTags := sets.NewSet(tags...)
+			sourceTags.Difference(cacheTags)
+
+			tags = sourceTags.List()
+		}
+
+		sort.Strings(tags)
+
+		c.logger.Info("Start sync", "image", image, "tags", tags, "size", len(tags))
+
+		rand.Shuffle(len(tags), func(i, j int) {
+			tags[i], tags[j] = tags[j], tags[i]
+		})
+
+		for _, tag := range tags {
 			t, err := reference.WithTag(name, tag)
 			if err != nil {
 				return fmt.Errorf("with tag failed: %w", err)
@@ -322,27 +365,33 @@ func (c *SyncManager) syncLayerFromManifestList(ctx context.Context, host, path,
 		caches = c.caches
 	}
 
-	var hash digest.Digest
+	var dgst digest.Digest
 	switch r := ref.(type) {
 	case reference.Digested:
-		hash = r.Digest()
+		dgst = r.Digest()
+		if c.uniq.Contains(dgst) {
+			c.logger.Info("skip manifest by unique", "image", image, "digest", dgst)
+			return nil
+		}
+		c.uniq.Add(dgst)
+
 		if !c.deep {
 			for _, cache := range c.caches {
-				b, _ := cache.StatManifest(ctx, host, path, hash.String())
+				b, _ := cache.StatManifest(ctx, host, path, dgst.String())
 				if !b {
 					caches = append(caches, cache)
 				}
 			}
 			if len(caches) == 0 {
-				c.logger.Info("skip manifest by cache", "image", image, "digest", hash)
+				c.logger.Info("skip manifest by cache", "image", image, "digest", dgst)
 				return nil
 			}
 		}
-		m, err = ms.Get(ctx, hash)
+		m, err = ms.Get(ctx, dgst)
 		if err != nil {
 			return fmt.Errorf("get manifest digest failed: %w", err)
 		}
-		err = manifestCallback(caches, hash.String(), m)
+		err = manifestCallback(caches, dgst.String(), m)
 		if err != nil {
 			return fmt.Errorf("manifest callback failed: %w", err)
 		}
@@ -352,20 +401,20 @@ func (c *SyncManager) syncLayerFromManifestList(ctx context.Context, host, path,
 		if err != nil {
 			return fmt.Errorf("get tag failed: %w", err)
 		}
-		hash = desc.Digest
+		dgst = desc.Digest
 		if !c.deep {
 			for _, cache := range c.caches {
-				b, _ := cache.StatOrRelinkManifest(ctx, host, path, tag, hash.String())
+				b, _ := cache.StatOrRelinkManifest(ctx, host, path, tag, dgst.String())
 				if !b {
 					caches = append(caches, cache)
 				}
 			}
 			if len(caches) == 0 {
-				c.logger.Info("skip manifest by cache", "image", image, "digest", hash, "tag", tag)
+				c.logger.Info("skip manifest by cache", "image", image, "digest", dgst, "tag", tag)
 				return nil
 			}
 		}
-		m, err = ms.Get(ctx, hash)
+		m, err = ms.Get(ctx, dgst)
 		if err != nil {
 			return fmt.Errorf("get manifest digest failed: %w", err)
 		}

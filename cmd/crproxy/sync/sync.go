@@ -20,6 +20,7 @@ import (
 type flagpole struct {
 	StorageURL        []string
 	Deep              bool
+	Quick             bool
 	List              []string
 	ListFromFile      string
 	Platform          []string
@@ -47,7 +48,8 @@ func NewCommand() *cobra.Command {
 	}
 
 	cmd.Flags().StringArrayVar(&flags.StorageURL, "storage-url", flags.StorageURL, "Storage driver url")
-	cmd.Flags().BoolVar(&flags.Deep, "deep", flags.Deep, "Deep sync")
+	cmd.Flags().BoolVar(&flags.Deep, "deep", flags.Deep, "Deep sync with blob")
+	cmd.Flags().BoolVar(&flags.Quick, "quick", flags.Quick, "Quick sync with tags")
 	cmd.Flags().StringArrayVar(&flags.List, "list", flags.List, "List")
 	cmd.Flags().StringVar(&flags.ListFromFile, "list-from-file", flags.ListFromFile, "List from file")
 	cmd.Flags().StringSliceVar(&flags.Platform, "platform", flags.Platform, "Platform")
@@ -96,6 +98,7 @@ func runE(ctx context.Context, flags *flagpole) error {
 	opts = append(opts,
 		csync.WithCaches(caches...),
 		csync.WithDeep(flags.Deep),
+		csync.WithQuick(flags.Quick),
 		csync.WithTransport(tp),
 		csync.WithLogger(logger),
 		csync.WithFilterPlatform(filterPlatform(flags.Platform)),

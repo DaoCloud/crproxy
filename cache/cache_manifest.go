@@ -7,8 +7,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"path"
 	"strings"
+
+	"github.com/daocloud/crproxy/internal/slices"
 )
 
 func (c *Cache) RelinkManifest(ctx context.Context, host, image, tag string, blob string) error {
@@ -179,6 +182,43 @@ func (c *Cache) StatOrRelinkManifest(ctx context.Context, host, image, tag strin
 	return true, nil
 }
 
+func (c *Cache) WalkTags(ctx context.Context, host, image string, tagCb func(tag string) bool) error {
+	manifestLinkPath := manifestTagListCachePath(host, image)
+	err := c.Walk(ctx, manifestLinkPath, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+
+		if d.Name() != "link" {
+			return nil
+		}
+
+		tag := path.Base(path.Dir(p))
+
+		if !tagCb(tag) {
+			return fs.SkipAll
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (c *Cache) ListTags(ctx context.Context, host, image string) ([]string, error) {
+	manifestLinkPath := manifestTagListCachePath(host, image)
+	list, err := c.List(ctx, manifestLinkPath)
+	if err != nil {
+		return nil, err
+	}
+
+	return slices.Map(list, path.Base), nil
+}
+
 func manifestRevisionsCachePath(host, image, blob string) string {
 	blob = cleanDigest(blob)
 	return path.Join("/docker/registry/v2/repositories", host, image, "_manifests/revisions/sha256", blob, "link")
@@ -186,4 +226,8 @@ func manifestRevisionsCachePath(host, image, blob string) string {
 
 func manifestTagCachePath(host, image, tag string) string {
 	return path.Join("/docker/registry/v2/repositories", host, image, "_manifests/tags", tag, "current/link")
+}
+
+func manifestTagListCachePath(host, image string) string {
+	return path.Join("/docker/registry/v2/repositories", host, image, "_manifests/tags")
 }
