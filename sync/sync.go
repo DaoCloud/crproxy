@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	"github.com/daocloud/crproxy/cache"
+	"github.com/daocloud/crproxy/internal/utils"
 	"github.com/distribution/reference"
 	"github.com/docker/distribution"
 	"github.com/docker/distribution/manifest/manifestlist"
@@ -134,6 +135,7 @@ func (c *SyncManager) Image(ctx context.Context, image string) error {
 
 	path := reference.Path(named)
 
+	host, path = utils.CorrectImage(host, path)
 	name := newNameWithoutDomain(named, path)
 
 	repo, err := client.NewRepository(name, "https://"+host, c.transport)
@@ -186,12 +188,14 @@ func (c *SyncManager) Image(ctx context.Context, image string) error {
 		}
 		defer f.Close()
 
+		c.logger.Info("start sync blob", "image", image, "digest", dgst, "platform", pf, "name", name)
+
 		if len(subCaches) == 1 {
 			n, err := subCaches[0].PutBlob(ctx, blob, f)
 			if err != nil {
 				return fmt.Errorf("put blob failed: %w", err)
 			}
-			c.logger.Info("sync blob", "image", image, "digest", dgst, "size", n, "platform", pf, "name", name)
+			c.logger.Info("finish sync blob", "image", image, "digest", dgst, "size", n, "platform", pf, "name", name)
 			return nil
 		}
 
@@ -224,7 +228,7 @@ func (c *SyncManager) Image(ctx context.Context, image string) error {
 
 		wg.Wait()
 
-		c.logger.Info("sync blob", "image", image, "digest", dgst, "platform", pf, "name", name, "size", n)
+		c.logger.Info("finish sync blob", "image", image, "digest", dgst, "size", n, "platform", pf, "name", name)
 		return nil
 	}
 
