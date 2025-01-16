@@ -91,7 +91,7 @@ func (m *Manager) Register(container *restful.Container) {
 		PostBuildSwaggerObjectHandler: func(s *spec.Swagger) {
 			s.Info = &spec.Info{}
 			s.Info.Title = "CRProxy Manager"
-			s.Schemes = []string{"http", "https"}
+			s.Schemes = []string{"https", "http"}
 			s.SecurityDefinitions = spec.SecurityDefinitions{
 				"BearerHeader": {
 					SecuritySchemeProps: spec.SecuritySchemeProps{
