@@ -1,0 +1,9 @@
+services:
+
+  db:
+    image: m.daocloud.io/docker.io/mysql:8
+    restart: always
+    ports:
+    - 3306:3306
+    environment:
+      MYSQL_ROOT_PASSWORD: example
