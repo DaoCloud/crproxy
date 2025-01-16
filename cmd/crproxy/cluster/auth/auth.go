@@ -211,7 +211,7 @@ func runE(ctx context.Context, flags *flagpole) error {
 	}
 
 	handler = handlers.CORS(
-		handlers.AllowedMethods([]string{http.MethodHead, http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete}),
+		handlers.AllowedMethods([]string{http.MethodHead, http.MethodGet, http.MethodPost, http.MethodPatch, http.MethodPut, http.MethodDelete}),
 		handlers.AllowedHeaders([]string{"Authorization", "Accept", "Content-Type", "Origin"}),
 		handlers.AllowedOrigins([]string{"*"}),
 	)(handler)
