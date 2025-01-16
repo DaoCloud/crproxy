@@ -117,6 +117,10 @@ func NewSyncManager(opts ...Option) (*SyncManager, error) {
 }
 
 func (c *SyncManager) Image(ctx context.Context, image string) error {
+	return c.ImageWithCallback(ctx, image, nil)
+}
+
+func (c *SyncManager) ImageWithCallback(ctx context.Context, image string, blobFunc func(blob string, progress int64, size int64)) error {
 	var regexTag *regexp.Regexp
 	ref, err := reference.Parse(image)
 	if err != nil {
@@ -172,13 +176,13 @@ func (c *SyncManager) Image(ctx context.Context, image string) error {
 		c.uniqBlob.Add(dgst)
 
 		blob := dgst.String()
-
+		var gotSize int64
 		var subCaches []*cache.Cache
 		for _, cache := range caches {
 			stat, err := cache.StatBlob(ctx, blob)
 			if err == nil {
 				if size > 0 {
-					gotSize := stat.Size()
+					gotSize = stat.Size()
 					if size == gotSize {
 						continue
 					}
@@ -191,6 +195,9 @@ func (c *SyncManager) Image(ctx context.Context, image string) error {
 		}
 
 		if len(subCaches) == 0 {
+			if blobFunc != nil {
+				blobFunc(blob, gotSize, gotSize)
+			}
 			c.logger.Info("skip blob by cache", "image", image, "digest", dgst)
 			return nil
 		}
@@ -201,12 +208,19 @@ func (c *SyncManager) Image(ctx context.Context, image string) error {
 		}
 		defer f.Close()
 
+		if blobFunc != nil {
+			blobFunc(blob, 0, 0)
+		}
+
 		c.logger.Info("start sync blob", "image", image, "digest", dgst, "platform", pf)
 
 		if len(subCaches) == 1 {
 			n, err := subCaches[0].PutBlob(ctx, blob, f)
 			if err != nil {
 				return fmt.Errorf("put blob failed: %w", err)
+			}
+			if blobFunc != nil {
+				blobFunc(blob, n, n)
 			}
 			c.logger.Info("finish sync blob", "image", image, "digest", dgst, "platform", pf, "size", n)
 			return nil
@@ -240,6 +254,10 @@ func (c *SyncManager) Image(ctx context.Context, image string) error {
 		}
 
 		wg.Wait()
+
+		if blobFunc != nil {
+			blobFunc(blob, n, n)
+		}
 
 		c.logger.Info("finish sync blob", "image", image, "digest", dgst, "platform", pf, "size", n)
 		return nil
