@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"time"
 
 	"github.com/daocloud/crproxy/queue/dao"
 	"github.com/daocloud/crproxy/queue/model"
@@ -124,14 +123,19 @@ func (s *MessageService) Cancel(ctx context.Context, id int64, lease string) err
 	return nil
 }
 
-func (s *MessageService) GetCompletedAndFailed(ctx context.Context, threshold time.Time) ([]model.Message, error) {
+func (s *MessageService) CleanUp(ctx context.Context) error {
 	ctx = dao.WithDB(ctx, s.db)
-	return s.messageDao.GetCompletedAndFailed(ctx, threshold)
+	return s.messageDao.CleanUp(ctx)
 }
 
-func (s *MessageService) GetStale(ctx context.Context, threshold time.Time) ([]model.Message, error) {
+func (s *MessageService) GetCompletedAndFailed(ctx context.Context) ([]model.Message, error) {
 	ctx = dao.WithDB(ctx, s.db)
-	return s.messageDao.GetStale(ctx, threshold)
+	return s.messageDao.GetCompletedAndFailed(ctx)
+}
+
+func (s *MessageService) GetStale(ctx context.Context) ([]model.Message, error) {
+	ctx = dao.WithDB(ctx, s.db)
+	return s.messageDao.GetStale(ctx)
 }
 
 func (s *MessageService) ResetToPending(ctx context.Context, id int64) error {

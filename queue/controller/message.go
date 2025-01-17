@@ -230,7 +230,7 @@ func (mc *MessageController) Schedule(ctx context.Context, logger *slog.Logger) 
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			staleList, err := mc.messageService.GetStale(ctx, time.Now().Add(-time.Minute))
+			staleList, err := mc.messageService.GetStale(ctx)
 			if err != nil {
 				logger.Error("ReleaseStale", "error", err)
 			} else {
@@ -246,7 +246,7 @@ func (mc *MessageController) Schedule(ctx context.Context, logger *slog.Logger) 
 				}
 			}
 
-			cleanList, err := mc.messageService.GetCompletedAndFailed(ctx, time.Now().Add(-time.Hour))
+			cleanList, err := mc.messageService.GetCompletedAndFailed(ctx)
 			if err != nil {
 				logger.Error("DeleteCompletedAndFailed", "error", err)
 			} else {
@@ -256,6 +256,11 @@ func (mc *MessageController) Schedule(ctx context.Context, logger *slog.Logger) 
 						logger.Error("DeleteByID", "error", err)
 					}
 				}
+			}
+
+			err = mc.messageService.CleanUp(ctx)
+			if err != nil {
+				logger.Error("CleanUp", "error", err)
 			}
 		}
 	}

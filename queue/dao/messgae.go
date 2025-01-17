@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"time"
 
 	"github.com/daocloud/crproxy/queue/model"
 )
@@ -113,12 +112,12 @@ func (m *Message) UpdatePriorityByID(ctx context.Context, id int64, priority int
 }
 
 const deleteMessageByIDSQL = `
-UPDATE messages SET delete_at = NOW() WHERE id = ? AND delete_at IS NULL
+UPDATE messages SET delete_at = NOW(), data = ? WHERE id = ? AND delete_at IS NULL
 `
 
 func (m *Message) DeleteByID(ctx context.Context, id int64) error {
 	db := GetDB(ctx)
-	_, err := db.ExecContext(ctx, deleteMessageByIDSQL, id)
+	_, err := db.ExecContext(ctx, deleteMessageByIDSQL, model.MessageAttr{}, id)
 	if err != nil {
 		return fmt.Errorf("failed to delete message: %w", err)
 	}
@@ -153,16 +152,29 @@ func (m *Message) List(ctx context.Context) ([]model.Message, error) {
 	return messages, nil
 }
 
+const cleanUpSQL = `
+DELETE FROM messages WHERE delete_at IS NOT NULL
+`
+
+func (m *Message) CleanUp(ctx context.Context) error {
+	db := GetDB(ctx)
+	_, err := db.ExecContext(ctx, cleanUpSQL)
+	if err != nil {
+		return fmt.Errorf("failed to clean up messages: %w", err)
+	}
+	return nil
+}
+
 const getCompletedAndFailedMessagesSQL = `
 SELECT id, content, priority, status, data, last_heartbeat 
 FROM messages 
 WHERE (status = ? OR status = ?)
-AND last_heartbeat < ? AND delete_at IS NULL
+AND last_heartbeat < NOW() - INTERVAL 1 HOUR AND delete_at IS NULL
 `
 
-func (m *Message) GetCompletedAndFailed(ctx context.Context, threshold time.Time) ([]model.Message, error) {
+func (m *Message) GetCompletedAndFailed(ctx context.Context) ([]model.Message, error) {
 	db := GetDB(ctx)
-	rows, err := db.QueryContext(ctx, getCompletedAndFailedMessagesSQL, model.StatusCompleted, model.StatusFailed, threshold)
+	rows, err := db.QueryContext(ctx, getCompletedAndFailedMessagesSQL, model.StatusCompleted, model.StatusFailed)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get completed and failed messages: %w", err)
 	}
@@ -188,12 +200,12 @@ const getStaleMessagesSQL = `
 SELECT id, content, priority, status, data, last_heartbeat 
 FROM messages 
 WHERE status = ? 
-AND last_heartbeat < ? AND delete_at IS NULL
+AND last_heartbeat < NOW() - INTERVAL 1 MINUTE AND delete_at IS NULL
 `
 
-func (m *Message) GetStale(ctx context.Context, threshold time.Time) ([]model.Message, error) {
+func (m *Message) GetStale(ctx context.Context) ([]model.Message, error) {
 	db := GetDB(ctx)
-	rows, err := db.QueryContext(ctx, getStaleMessagesSQL, model.StatusProcessing, threshold)
+	rows, err := db.QueryContext(ctx, getStaleMessagesSQL, model.StatusProcessing)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get stale messages: %w", err)
 	}
