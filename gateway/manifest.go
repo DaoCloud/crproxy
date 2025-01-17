@@ -112,9 +112,9 @@ func (c *Gateway) cacheManifest(info *PathInfo) (int, error) {
 					msg := fmt.Sprintf("%s/%s@%s", info.Host, info.Image, digest)
 					_, err := c.queueClient.Create(context.Background(), msg, 0)
 					if err != nil {
-						c.logger.Warn("failed add message to queue", "msg", msg, "error", err)
+						c.logger.Warn("failed add message to queue", "msg", msg, "tag", info.Manifests, "error", err)
 					} else {
-						c.logger.Info("Add message to queue", "msg", msg, "digest", digest)
+						c.logger.Info("Add message to queue", "msg", msg, "tag", info.Manifests)
 					}
 					digest = cachedDigest
 				}
