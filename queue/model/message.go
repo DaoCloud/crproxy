@@ -32,6 +32,8 @@ type MessageAttr struct {
 	Progress int64  `json:"progress,omitempty"`
 	Size     int64  `json:"size,omitempty"`
 
+	Spec []byte `json:"spec,omitempty"`
+
 	// Deprecate
 	Blobs []Blob `json:"blobs,omitempty"`
 }

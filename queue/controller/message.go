@@ -509,9 +509,14 @@ func (mc *MessageController) Heartbeat(req *restful.Request, resp *restful.Respo
 	}
 
 	curr.Data.Blobs = heartbeatRequest.Data.Blobs
-	curr.Data.Progress = heartbeatRequest.Data.Progress
+	if heartbeatRequest.Data.Progress != 0 {
+		curr.Data.Progress = heartbeatRequest.Data.Progress
+	}
 	if heartbeatRequest.Data.Size > 0 {
 		curr.Data.Size = heartbeatRequest.Data.Size
+	}
+	if len(heartbeatRequest.Data.Spec) != 0 {
+		curr.Data.Spec = heartbeatRequest.Data.Spec
 	}
 
 	if err := mc.messageService.Heartbeat(req.Request.Context(), messageID, curr.Data, heartbeatRequest.Lease); err != nil {
