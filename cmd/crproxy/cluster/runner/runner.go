@@ -9,14 +9,15 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/daocloud/crproxy/cache"
+	"github.com/daocloud/crproxy/internal/spec"
+	"github.com/daocloud/crproxy/queue/client"
 	"github.com/daocloud/crproxy/runner"
 	"github.com/daocloud/crproxy/storage"
-	csync "github.com/daocloud/crproxy/sync"
 	"github.com/daocloud/crproxy/transport"
-	"github.com/docker/distribution/manifest/manifestlist"
 	"github.com/spf13/cobra"
 	"github.com/wzshiming/httpseek"
 )
@@ -24,7 +25,7 @@ import (
 type flagpole struct {
 	QueueURL string
 
-	AdminToken string
+	QueueToken string
 
 	StorageURL    []string
 	Deep          bool
@@ -55,8 +56,7 @@ func NewCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&flags.AdminToken, "admin-token", flags.AdminToken, "Admin token")
-
+	cmd.Flags().StringVar(&flags.QueueToken, "queue-token", flags.QueueToken, "Queue token")
 	cmd.Flags().StringVar(&flags.QueueURL, "queue-url", flags.QueueURL, "Queue URL")
 
 	cmd.Flags().StringArrayVar(&flags.StorageURL, "storage-url", flags.StorageURL, "Storage driver url")
@@ -74,8 +74,6 @@ func NewCommand() *cobra.Command {
 
 func runE(ctx context.Context, flags *flagpole) error {
 	logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
-
-	opts := []csync.Option{}
 
 	var caches []*cache.Cache
 	for _, s := range flags.StorageURL {
@@ -105,20 +103,6 @@ func runE(ctx context.Context, flags *flagpole) error {
 		return fmt.Errorf("create transport failed: %w", err)
 	}
 
-	opts = append(opts,
-		csync.WithCaches(caches...),
-		csync.WithDeep(flags.Deep),
-		csync.WithQuick(flags.Quick),
-		csync.WithTransport(tp),
-		csync.WithLogger(logger),
-		csync.WithFilterPlatform(filterPlatform(flags.Platform)),
-	)
-
-	sm, err := csync.NewSyncManager(opts...)
-	if err != nil {
-		return fmt.Errorf("create sync manager failed: %w", err)
-	}
-
 	var lease string
 	if flags.Lease == "" {
 		lease, err = identity()
@@ -146,7 +130,7 @@ func runE(ctx context.Context, flags *flagpole) error {
 		})
 	}
 
-	client := &http.Client{
+	httpClient := &http.Client{
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if len(via) > 10 {
 				return http.ErrUseLastResponse
@@ -165,7 +149,18 @@ func runE(ctx context.Context, flags *flagpole) error {
 		Transport: tp,
 	}
 
-	runner, err := runner.NewRunner(client, caches, lease, flags.QueueURL, flags.AdminToken, sm)
+	queueClient := client.NewMessageClient(http.DefaultClient, flags.QueueURL, flags.QueueToken)
+
+	opts := []runner.Option{
+		runner.WithCaches(caches...),
+		runner.WithHttpClient(httpClient),
+		runner.WithLease(lease),
+		runner.WithLogger(logger),
+		runner.WithQueueClient(queueClient),
+		runner.WithFilterPlatform(filterPlatform(flags.Platform)),
+	}
+
+	runner, err := runner.NewRunner(opts...)
 	if err != nil {
 		return err
 	}
@@ -174,7 +169,7 @@ func runE(ctx context.Context, flags *flagpole) error {
 		ctx, _ = context.WithTimeout(ctx, flags.Duration)
 	}
 
-	err = runner.Run(ctx, logger)
+	err = runner.Run(ctx)
 	if err != nil {
 		if !errors.Is(err, context.DeadlineExceeded) {
 			return err
@@ -183,15 +178,21 @@ func runE(ctx context.Context, flags *flagpole) error {
 	return nil
 }
 
-func filterPlatform(ps []string) func(pf manifestlist.PlatformSpec) bool {
-	platforms := map[string]struct{}{}
+func filterPlatform(ps []string) func(pf spec.Platform) bool {
+	platforms := map[spec.Platform]struct{}{}
 	for _, p := range ps {
-		platforms[p] = struct{}{}
+		ao := strings.SplitN(p, "/", 2)
+		if len(ao) != 2 {
+			continue
+		}
+		key := spec.Platform{
+			OS:           ao[0],
+			Architecture: ao[1],
+		}
+		platforms[key] = struct{}{}
 	}
-	return func(pf manifestlist.PlatformSpec) bool {
-		p := fmt.Sprintf("%s/%s", pf.OS, pf.Architecture)
-
-		if _, ok := platforms[p]; ok {
+	return func(pf spec.Platform) bool {
+		if _, ok := platforms[pf]; ok {
 			return true
 		}
 		return false

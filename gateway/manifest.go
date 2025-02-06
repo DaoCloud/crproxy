@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/daocloud/crproxy/internal/spec"
 	"github.com/daocloud/crproxy/internal/utils"
 	"github.com/daocloud/crproxy/queue/model"
 	"github.com/daocloud/crproxy/token"
@@ -253,7 +254,7 @@ func (c *Gateway) cacheManifest(info *PathInfo, weight int) (int, error) {
 	})
 
 	if c.queueClient != nil {
-		ml := manifestLayers{}
+		ml := spec.ManifestLayers{}
 		json.Unmarshal(body, &ml)
 
 		if len(ml.Layers) != 0 {
@@ -383,15 +384,4 @@ func (c *Gateway) serveCachedManifest(rw http.ResponseWriter, r *http.Request, i
 	}
 
 	return true
-}
-
-type manifestLayers struct {
-	Config layer   `json:"config"`
-	Layers []layer `json:"layers"`
-}
-
-type layer struct {
-	MediaType string `json:"mediaType"`
-	Size      int64  `json:"size"`
-	Digest    string `json:"digest"`
 }
