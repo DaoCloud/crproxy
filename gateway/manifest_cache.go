@@ -72,6 +72,7 @@ func (m *manifestCache) Get(info *PathInfo) (cacheValue, bool) {
 		Digest:    key.Tag,
 		MediaType: val.MediaType,
 		Length:    val.Length,
+		Body:      val.Body,
 	}, true
 }
 
@@ -105,6 +106,7 @@ func (m *manifestCache) Put(info *PathInfo, val cacheValue) {
 	m.digest.SetWithTTL(key, cacheDigestValue{
 		MediaType: val.MediaType,
 		Length:    val.Length,
+		Body:      val.Body,
 	}, m.duration)
 
 }
@@ -124,6 +126,7 @@ type cacheTagValue struct {
 type cacheDigestValue struct {
 	MediaType  string
 	Length     string
+	Body       []byte
 	Error      error
 	StatusCode int
 }
@@ -132,6 +135,7 @@ type cacheValue struct {
 	Digest     string
 	MediaType  string
 	Length     string
+	Body       []byte
 	Error      error
 	StatusCode int
 }
