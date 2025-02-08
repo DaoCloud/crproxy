@@ -24,9 +24,11 @@ type QueueManager struct {
 	MessageService *service.MessageService
 
 	MessageController *controller.MessageController
+
+	allowAnonymousRead bool
 }
 
-func NewQueueManager(adminToken string, db *sql.DB) *QueueManager {
+func NewQueueManager(adminToken string, allowAnonymousRead bool, db *sql.DB) *QueueManager {
 	m := &QueueManager{
 		adminToken: adminToken,
 		db:         db,
@@ -51,6 +53,12 @@ func (m *QueueManager) Register(container *restful.Container) {
 	if m.adminToken != "" {
 		ws.Filter(func(req *restful.Request, resp *restful.Response, fc *restful.FilterChain) {
 			auth := req.HeaderParameter("Authorization")
+
+			if m.allowAnonymousRead && auth == "" && req.Request.Method == http.MethodGet {
+				fc.ProcessFilter(req, resp)
+				return
+			}
+
 			if !strings.HasPrefix(auth, "Bearer ") {
 				resp.WriteErrorString(http.StatusForbidden, "Forbidden")
 				return

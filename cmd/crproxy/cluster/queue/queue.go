@@ -29,6 +29,8 @@ type flagpole struct {
 
 	SimpleAuthUserpass map[string]string
 
+	AllowAnonymousRead bool
+
 	AdminToken string
 
 	DBURL string
@@ -60,6 +62,7 @@ func NewCommand() *cobra.Command {
 
 	cmd.Flags().StringVar(&flags.DBURL, "db-url", flags.DBURL, "Database URL")
 
+	cmd.Flags().BoolVar(&flags.AllowAnonymousRead, "allow-anonymous-read", flags.AllowAnonymousRead, "Allow anonymous read access")
 	return cmd
 }
 
@@ -83,7 +86,7 @@ func runE(ctx context.Context, flags *flagpole) error {
 
 		logger.Info("Connected to DB")
 
-		mgr = queue.NewQueueManager(flags.AdminToken, db)
+		mgr = queue.NewQueueManager(flags.AdminToken, flags.AllowAnonymousRead, db)
 
 		mgr.Register(container)
 
