@@ -342,15 +342,34 @@ func (c *Agent) Serve(rw http.ResponseWriter, r *http.Request, info *BlobInfo, t
 		return
 	}
 
+	var isBigCache bool
 	stat, err := c.cache.StatBlob(ctx, info.Blobs)
 	if err == nil {
-		if c.serveCachedBlobHead(rw, r, stat.Size()) {
+		if c.bigCache != nil && stat.Size() >= int64(c.bigCacheSize) {
+			isBigCache = true
+			_, err := c.bigCache.StatBlob(ctx, info.Blobs)
+			if err == nil {
+				if c.serveCachedBlobHead(rw, r, stat.Size()) {
+					return
+				}
+
+				c.rateLimit(rw, r, info.Blobs, info, t, value.Size, start)
+				c.serveCachedBlob(rw, r, info.Blobs, info, t, stat.Size())
+				return
+			}
+		}
+	} else {
+		_, err := c.bigCache.StatBlob(ctx, info.Blobs)
+		if err == nil {
+			isBigCache = true
+			if c.serveCachedBlobHead(rw, r, stat.Size()) {
+				return
+			}
+
+			c.rateLimit(rw, r, info.Blobs, info, t, value.Size, start)
+			c.serveCachedBlob(rw, r, info.Blobs, info, t, stat.Size())
 			return
 		}
-
-		c.rateLimit(rw, r, info.Blobs, info, t, value.Size, start)
-		c.serveCachedBlob(rw, r, info.Blobs, info, t, stat.Size())
-		return
 	}
 
 	c.rateLimit(rw, r, info.Blobs, info, t, value.Size, start)
@@ -371,6 +390,17 @@ func (c *Agent) Serve(rw http.ResponseWriter, r *http.Request, info *BlobInfo, t
 		}
 		c.serveCachedBlob(rw, r, info.Blobs, info, t, value.Size)
 		return
+	}
+
+	if isBigCache {
+		stat, err = c.bigCache.StatBlob(ctx, info.Blobs)
+		if err == nil {
+			if c.serveCachedBlobHead(rw, r, stat.Size()) {
+				return
+			}
+			c.serveCachedBlob(rw, r, info.Blobs, info, t, stat.Size())
+			return
+		}
 	}
 
 	stat, err = c.cache.StatBlob(ctx, info.Blobs)
