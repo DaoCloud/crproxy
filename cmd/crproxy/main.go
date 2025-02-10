@@ -11,7 +11,7 @@ import (
 
 	_ "github.com/daocloud/crproxy/storage/driver/obs"
 	_ "github.com/daocloud/crproxy/storage/driver/oss"
-	_ "github.com/docker/distribution/registry/storage/driver/s3-aws"
+	_ "github.com/daocloud/crproxy/storage/driver/s3"
 )
 
 func init() {
