@@ -47,20 +47,23 @@ func (m *blobCache) PutError(key string, err error, sc int) {
 	}, m.duration)
 }
 
-func (m *blobCache) Put(key string, size int64) {
+func (m *blobCache) Put(key string, size int64, bigCache bool) {
 	m.digest.SetWithTTL(key, blobValue{
-		Size: size,
+		Size:     size,
+		BigCache: bigCache,
 	}, m.duration)
 }
 
-func (m *blobCache) PutNoTTL(key string, size int64) {
+func (m *blobCache) PutNoTTL(key string, size int64, bigCache bool) {
 	m.digest.Set(key, blobValue{
-		Size: size,
+		Size:     size,
+		BigCache: bigCache,
 	})
 }
 
 type blobValue struct {
 	Size       int64
+	BigCache   bool
 	Error      error
 	StatusCode int
 }
