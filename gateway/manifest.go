@@ -130,7 +130,7 @@ func (c *Gateway) cacheManifest(info *PathInfo) (int, error) {
 		Path:   fmt.Sprintf("/v2/%s/manifests/%s", info.Image, info.Manifests),
 	}
 
-	if !info.IsDigestManifests {
+	if !info.IsDigestManifests && info.Host != "registry.ollama.ai" {
 		forwardReq, err := http.NewRequestWithContext(ctx, http.MethodHead, u.String(), nil)
 		if err != nil {
 			return 0, err

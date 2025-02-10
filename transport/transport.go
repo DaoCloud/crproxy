@@ -89,6 +89,10 @@ func parsePath(path string) (string, bool) {
 }
 
 func (c *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if req.URL.Host == "registry.ollama.ai" {
+		return c.baseTransport.RoundTrip(req)
+	}
+
 	rt, err := c.getRoundTripper(req)
 	if err != nil {
 		return nil, err

@@ -594,7 +594,7 @@ func (r *Runner) manifest(ctx context.Context, messageID int64, host, image, tag
 				subCaches = append(subCaches, cache)
 			}
 		}
-	} else {
+	} else if u.Host != "registry.ollama.ai" {
 		req, err := http.NewRequestWithContext(ctx, http.MethodHead, u.String(), nil)
 		if err != nil {
 			return err
@@ -623,6 +623,13 @@ func (r *Runner) manifest(ctx context.Context, messageID int64, host, image, tag
 				if !exist {
 					subCaches = append(subCaches, cache)
 				}
+			}
+		}
+	} else {
+		for _, cache := range r.caches {
+			exist, _ := cache.StatManifest(ctx, host, image, tagOrBlob)
+			if !exist {
+				subCaches = append(subCaches, cache)
 			}
 		}
 	}
