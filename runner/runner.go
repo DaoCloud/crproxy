@@ -23,8 +23,9 @@ import (
 )
 
 type Runner struct {
-	bigCacheSize int
-	bigCache     *cache.Cache
+	bigCacheSize   int
+	bigCache       *cache.Cache
+	bigCacheBackup bool
 
 	caches      []*cache.Cache
 	httpClient  *http.Client
@@ -86,6 +87,12 @@ func WithBigCache(cache *cache.Cache, size int) Option {
 	return func(c *Runner) {
 		c.bigCache = cache
 		c.bigCacheSize = size
+	}
+}
+
+func WithBigCacheBackup(backup bool) Option {
+	return func(c *Runner) {
+		c.bigCacheBackup = backup
 	}
 }
 
@@ -428,13 +435,17 @@ func (r *Runner) blob(ctx context.Context, host, name, blob string, size int64, 
 	}
 
 	if r.bigCache != nil && r.bigCacheSize > 0 && gotSize.Load() >= int64(r.bigCacheSize) {
-		n, err := r.bigCache.PutBlob(ctx, blob, body)
-		if err != nil {
-			return fmt.Errorf("put blob failed: %w", err)
+		if !r.bigCacheBackup {
+			n, err := r.bigCache.PutBlob(ctx, blob, body)
+			if err != nil {
+				return fmt.Errorf("put blob failed: %w", err)
+			}
+
+			r.logger.Info("finish sync blob", "digest", blob, "size", n)
+			return nil
 		}
 
-		r.logger.Info("finish sync blob", "digest", blob, "size", n)
-		return nil
+		subCaches = append(subCaches, r.bigCache)
 	}
 
 	if len(subCaches) == 1 {
