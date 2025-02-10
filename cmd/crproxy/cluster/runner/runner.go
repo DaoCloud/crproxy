@@ -23,9 +23,11 @@ import (
 )
 
 type flagpole struct {
-	QueueURL string
-
+	QueueURL   string
 	QueueToken string
+
+	BigStorageURL  string
+	BigStorageSize int
 
 	StorageURL    []string
 	Quick         bool
@@ -59,6 +61,8 @@ func NewCommand() *cobra.Command {
 	cmd.Flags().StringVar(&flags.QueueURL, "queue-url", flags.QueueURL, "Queue URL")
 
 	cmd.Flags().StringArrayVar(&flags.StorageURL, "storage-url", flags.StorageURL, "Storage driver url")
+	cmd.Flags().StringVar(&flags.BigStorageURL, "big-storage-url", flags.BigStorageURL, "Big storage driver url")
+	cmd.Flags().IntVar(&flags.BigStorageSize, "big-storage-size", flags.BigStorageSize, "Big storage size")
 	cmd.Flags().BoolVar(&flags.Quick, "quick", flags.Quick, "Quick sync with tags")
 	cmd.Flags().StringSliceVar(&flags.Platform, "platform", flags.Platform, "Platform")
 	cmd.Flags().StringArrayVarP(&flags.Userpass, "user", "u", flags.Userpass, "host and username and password -u user:pwd@host")
@@ -156,6 +160,22 @@ func runE(ctx context.Context, flags *flagpole) error {
 		runner.WithLogger(logger),
 		runner.WithQueueClient(queueClient),
 		runner.WithFilterPlatform(filterPlatform(flags.Platform)),
+	}
+
+	if flags.BigStorageURL != "" && flags.BigStorageSize > 0 {
+		bigCacheOpts := []cache.Option{}
+		sd, err := storage.NewStorage(flags.BigStorageURL)
+		if err != nil {
+			return fmt.Errorf("create storage driver failed: %w", err)
+		}
+		bigCacheOpts = append(bigCacheOpts,
+			cache.WithStorageDriver(sd),
+		)
+		bigsdcache, err := cache.NewCache(bigCacheOpts...)
+		if err != nil {
+			return fmt.Errorf("create cache failed: %w", err)
+		}
+		opts = append(opts, runner.WithBigCache(bigsdcache, flags.BigStorageSize))
 	}
 
 	runner, err := runner.NewRunner(opts...)

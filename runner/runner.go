@@ -23,6 +23,9 @@ import (
 )
 
 type Runner struct {
+	bigCacheSize int
+	bigCache     *cache.Cache
+
 	caches      []*cache.Cache
 	httpClient  *http.Client
 	queueClient *client.MessageClient
@@ -76,6 +79,13 @@ func WithQueueClient(queueClient *client.MessageClient) Option {
 func WithLease(lease string) Option {
 	return func(r *Runner) {
 		r.lease = lease
+	}
+}
+
+func WithBigCache(cache *cache.Cache, size int) Option {
+	return func(c *Runner) {
+		c.bigCache = cache
+		c.bigCacheSize = size
 	}
 }
 
@@ -415,6 +425,16 @@ func (r *Runner) blob(ctx context.Context, host, name, blob string, size int64, 
 	body := &readerCounter{
 		r:       resp.Body,
 		counter: progress,
+	}
+
+	if r.bigCache != nil && r.bigCacheSize > 0 && gotSize.Load() >= int64(r.bigCacheSize) {
+		n, err := r.bigCache.PutBlob(ctx, blob, body)
+		if err != nil {
+			return fmt.Errorf("put blob failed: %w", err)
+		}
+
+		r.logger.Info("finish sync blob", "digest", blob, "size", n)
+		return nil
 	}
 
 	if len(subCaches) == 1 {

@@ -53,6 +53,12 @@ func (m *blobCache) Put(key string, size int64) {
 	}, m.duration)
 }
 
+func (m *blobCache) PutNoTTL(key string, size int64) {
+	m.digest.Set(key, blobValue{
+		Size: size,
+	})
+}
+
 type blobValue struct {
 	Size       int64
 	Error      error

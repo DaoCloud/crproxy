@@ -27,6 +27,9 @@ import (
 )
 
 type flagpole struct {
+	BigStorageURL  string
+	BigStorageSize int
+
 	StorageURL    string
 	RedirectLinks string
 	SignLink      bool
@@ -83,6 +86,8 @@ func NewCommand() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&flags.StorageURL, "storage-url", flags.StorageURL, "Storage driver url")
+	cmd.Flags().StringVar(&flags.BigStorageURL, "big-storage-url", flags.BigStorageURL, "Big storage driver url")
+	cmd.Flags().IntVar(&flags.BigStorageSize, "big-storage-size", flags.BigStorageSize, "Big storage size")
 	cmd.Flags().StringVar(&flags.RedirectLinks, "redirect-links", flags.RedirectLinks, "Redirect links")
 	cmd.Flags().BoolVar(&flags.SignLink, "sign-link", flags.SignLink, "Sign Link")
 
@@ -176,19 +181,36 @@ func runE(ctx context.Context, flags *flagpole) error {
 			cacheOpts = append(cacheOpts, cache.WithRedirectLinks(u))
 		}
 
-		cache, err := cache.NewCache(cacheOpts...)
+		sdcache, err := cache.NewCache(cacheOpts...)
 		if err != nil {
 			return fmt.Errorf("create cache failed: %w", err)
 		}
 		gatewayOpts = append(gatewayOpts,
-			gateway.WithCache(cache),
+			gateway.WithCache(sdcache),
 			gateway.WithManifestCacheDuration(flags.ManifestCacheDuration),
 			gateway.WithRecacheMaxWait(flags.RecacheMaxWaitDuration),
 		)
 
 		agentOpts = append(agentOpts,
-			agent.WithCache(cache),
+			agent.WithCache(sdcache),
 		)
+
+		if flags.BigStorageURL != "" && flags.BigStorageSize > 0 {
+			bigCacheOpts := []cache.Option{}
+			sd, err := storage.NewStorage(flags.BigStorageURL)
+			if err != nil {
+				return fmt.Errorf("create storage driver failed: %w", err)
+			}
+			bigCacheOpts = append(bigCacheOpts,
+				cache.WithSignLink(flags.SignLink),
+				cache.WithStorageDriver(sd),
+			)
+			bigsdcache, err := cache.NewCache(bigCacheOpts...)
+			if err != nil {
+				return fmt.Errorf("create cache failed: %w", err)
+			}
+			agentOpts = append(agentOpts, agent.WithBigCache(bigsdcache, flags.BigStorageSize))
+		}
 	}
 
 	if flags.TokenPublicKeyFile != "" {
