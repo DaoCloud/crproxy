@@ -372,19 +372,56 @@ func (r *Runner) runOnceManifestSync(ctx context.Context) error {
 }
 
 func (r *Runner) blob(ctx context.Context, host, name, blob string, size int64, gotSize, progress *atomic.Int64) error {
+	u := &url.URL{
+		Scheme: "https",
+		Host:   host,
+		Path:   fmt.Sprintf("/v2/%s/blobs/%s", name, blob),
+	}
+
+	if size == 0 {
+		req, err := http.NewRequestWithContext(ctx, http.MethodHead, u.String(), nil)
+		if err != nil {
+			return err
+		}
+		resp, err := r.httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+		if resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("failed to head blob: status code %d", resp.StatusCode)
+		}
+		size = resp.ContentLength
+	}
+
+	if size > 0 {
+		gotSize.Store(size)
+	}
+
+	var caches []*cache.Cache
+
+	if r.bigCache != nil && r.bigCacheSize > 0 && gotSize.Load() >= int64(r.bigCacheSize) {
+		if !r.bigCacheBackup {
+			caches = []*cache.Cache{r.bigCache}
+		} else {
+			caches = append([]*cache.Cache{r.bigCache}, r.caches...)
+		}
+	} else {
+		caches = append(caches, r.caches...)
+	}
+
 	var subCaches []*cache.Cache
-	for _, cache := range r.caches {
+	for _, cache := range caches {
 		stat, err := cache.StatBlob(ctx, blob)
 		if err == nil {
-			if size > 0 {
-				gotSize := stat.Size()
-				if size == gotSize {
-					continue
-				}
-				r.logger.Error("size is not meeting expectations", "digest", blob, "size", size, "gotSize", gotSize)
-			} else {
+			gotSize := stat.Size()
+			if size == gotSize {
 				continue
 			}
+			r.logger.Error("size is not meeting expectations", "digest", blob, "size", size, "gotSize", gotSize)
 		}
 		subCaches = append(subCaches, cache)
 	}
@@ -392,12 +429,6 @@ func (r *Runner) blob(ctx context.Context, host, name, blob string, size int64, 
 	if len(subCaches) == 0 {
 		r.logger.Info("skip blob by cache", "digest", blob)
 		return nil
-	}
-
-	u := &url.URL{
-		Scheme: "https",
-		Host:   host,
-		Path:   fmt.Sprintf("/v2/%s/blobs/%s", name, blob),
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
@@ -411,7 +442,7 @@ func (r *Runner) blob(ctx context.Context, host, name, blob string, size int64, 
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("failed to retrieve blob: status code %d", resp.StatusCode)
+		return fmt.Errorf("failed to get blob: status code %d", resp.StatusCode)
 	}
 
 	r.logger.Info("start sync blob", "digest", blob, "url", u.String())
@@ -422,30 +453,9 @@ func (r *Runner) blob(ctx context.Context, host, name, blob string, size int64, 
 		}
 	}
 
-	if size > 0 {
-		gotSize.Store(size)
-	}
-	if resp.ContentLength > 0 {
-		gotSize.Store(resp.ContentLength)
-	}
-
 	body := &readerCounter{
 		r:       resp.Body,
 		counter: progress,
-	}
-
-	if r.bigCache != nil && r.bigCacheSize > 0 && gotSize.Load() >= int64(r.bigCacheSize) {
-		if !r.bigCacheBackup {
-			n, err := r.bigCache.PutBlob(ctx, blob, body)
-			if err != nil {
-				return fmt.Errorf("put blob failed: %w", err)
-			}
-
-			r.logger.Info("finish sync blob", "digest", blob, "size", n)
-			return nil
-		}
-
-		subCaches = append(subCaches, r.bigCache)
 	}
 
 	if len(subCaches) == 1 {
@@ -640,6 +650,10 @@ func (r *Runner) manifest(ctx context.Context, messageID int64, host, image, tag
 			_ = resp.Body.Close()
 		}
 
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("failed to head manifest: status code %d", resp.StatusCode)
+		}
+
 		digest := resp.Header.Get("Docker-Content-Digest")
 		if digest != "" {
 			for _, cache := range r.caches {
@@ -682,7 +696,7 @@ func (r *Runner) manifest(ctx context.Context, messageID int64, host, image, tag
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("failed to retrieve manifest: status code %d", resp.StatusCode)
+		return fmt.Errorf("failed to get manifest: status code %d", resp.StatusCode)
 	}
 
 	body, err := io.ReadAll(resp.Body)
