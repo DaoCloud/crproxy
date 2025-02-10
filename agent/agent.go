@@ -338,19 +338,51 @@ func (c *Agent) Serve(rw http.ResponseWriter, r *http.Request, info *BlobInfo, t
 		}
 
 		c.rateLimit(rw, r, info.Blobs, info, t, value.Size, start)
+		if value.BigCache {
+			c.serveBigCachedBlob(rw, r, info.Blobs, info, t, value.Size)
+			return
+		}
+
 		c.serveCachedBlob(rw, r, info.Blobs, info, t, value.Size)
 		return
 	}
 
+	var isBigCache bool
 	stat, err := c.cache.StatBlob(ctx, info.Blobs)
 	if err == nil {
-		if c.serveCachedBlobHead(rw, r, stat.Size()) {
+		if c.bigCache != nil && stat.Size() >= int64(c.bigCacheSize) {
+			isBigCache = true
+			_, err := c.bigCache.StatBlob(ctx, info.Blobs)
+			if err == nil {
+				if c.serveCachedBlobHead(rw, r, stat.Size()) {
+					return
+				}
+
+				c.rateLimit(rw, r, info.Blobs, info, t, value.Size, start)
+				c.serveBigCachedBlob(rw, r, info.Blobs, info, t, stat.Size())
+				return
+			}
+		} else {
+			if c.serveCachedBlobHead(rw, r, stat.Size()) {
+				return
+			}
+
+			c.rateLimit(rw, r, info.Blobs, info, t, value.Size, start)
+			c.serveCachedBlob(rw, r, info.Blobs, info, t, stat.Size())
 			return
 		}
+	} else {
+		stat, err := c.bigCache.StatBlob(ctx, info.Blobs)
+		if err == nil {
+			isBigCache = true
+			if c.serveCachedBlobHead(rw, r, stat.Size()) {
+				return
+			}
 
-		c.rateLimit(rw, r, info.Blobs, info, t, value.Size, start)
-		c.serveCachedBlob(rw, r, info.Blobs, info, t, stat.Size())
-		return
+			c.rateLimit(rw, r, info.Blobs, info, t, value.Size, start)
+			c.serveBigCachedBlob(rw, r, info.Blobs, info, t, stat.Size())
+			return
+		}
 	}
 
 	c.rateLimit(rw, r, info.Blobs, info, t, value.Size, start)
@@ -371,6 +403,17 @@ func (c *Agent) Serve(rw http.ResponseWriter, r *http.Request, info *BlobInfo, t
 		}
 		c.serveCachedBlob(rw, r, info.Blobs, info, t, value.Size)
 		return
+	}
+
+	if isBigCache {
+		stat, err = c.bigCache.StatBlob(ctx, info.Blobs)
+		if err == nil {
+			if c.serveCachedBlobHead(rw, r, stat.Size()) {
+				return
+			}
+			c.serveBigCachedBlob(rw, r, info.Blobs, info, t, stat.Size())
+			return
+		}
 	}
 
 	stat, err = c.cache.StatBlob(ctx, info.Blobs)
@@ -475,7 +518,7 @@ func (c *Agent) cacheBlob(info *BlobInfo) (int64, func() error, int, error) {
 			if err != nil {
 				return fmt.Errorf("Put to big cache: %w", err)
 			}
-			c.blobCache.PutNoTTL(info.Blobs, size)
+			c.blobCache.PutNoTTL(info.Blobs, size, true)
 			return nil
 		}
 
@@ -483,7 +526,7 @@ func (c *Agent) cacheBlob(info *BlobInfo) (int64, func() error, int, error) {
 		if err != nil {
 			return fmt.Errorf("Put to cache: %w", err)
 		}
-		c.blobCache.Put(info.Blobs, size)
+		c.blobCache.Put(info.Blobs, size, false)
 		return nil
 	}
 
@@ -508,27 +551,28 @@ func (c *Agent) serveCachedBlobHead(rw http.ResponseWriter, r *http.Request, siz
 	return false
 }
 
-func (c *Agent) serveCachedBlob(rw http.ResponseWriter, r *http.Request, blob string, info *BlobInfo, t *token.Token, size int64) {
+func (c *Agent) serveBigCachedBlob(rw http.ResponseWriter, r *http.Request, blob string, info *BlobInfo, t *token.Token, size int64) {
 	referer := r.RemoteAddr
 	if info != nil {
 		referer = fmt.Sprintf("%d-%d:%s:%s/%s", t.RegistryID, t.TokenID, referer, info.Host, info.Image)
 	}
 
-	if c.bigCache != nil && c.bigCacheSize > 0 && size >= int64(c.bigCacheSize) {
-		u, err := c.bigCache.RedirectBlob(r.Context(), blob, referer)
-		if err != nil {
-			c.logger.Info("failed to redirect blob", "digest", blob, "error", err)
-			c.blobCache.Remove(info.Blobs)
-			utils.ServeError(rw, r, errcode.ErrorCodeUnknown, 0)
-			return
-		}
-
-		c.blobCache.PutNoTTL(info.Blobs, size)
-
-		c.logger.Info("Cache hit", "digest", blob, "url", u)
-		http.Redirect(rw, r, u, http.StatusTemporaryRedirect)
+	u, err := c.bigCache.RedirectBlob(r.Context(), blob, referer)
+	if err != nil {
+		c.logger.Info("failed to redirect blob", "digest", blob, "error", err)
+		c.blobCache.Remove(info.Blobs)
+		utils.ServeError(rw, r, errcode.ErrorCodeUnknown, 0)
 		return
 	}
+
+	c.blobCache.PutNoTTL(info.Blobs, size, true)
+
+	c.logger.Info("Big Cache hit", "digest", blob, "url", u)
+	http.Redirect(rw, r, u, http.StatusTemporaryRedirect)
+	return
+}
+
+func (c *Agent) serveCachedBlob(rw http.ResponseWriter, r *http.Request, blob string, info *BlobInfo, t *token.Token, size int64) {
 
 	if c.blobNoRedirectSize < 0 || int64(c.blobNoRedirectSize) > size {
 		data, err := c.cache.GetBlob(r.Context(), info.Blobs)
@@ -540,7 +584,7 @@ func (c *Agent) serveCachedBlob(rw http.ResponseWriter, r *http.Request, blob st
 		}
 		defer data.Close()
 
-		c.blobCache.Put(info.Blobs, size)
+		c.blobCache.Put(info.Blobs, size, false)
 
 		rw.Header().Set("Content-Length", strconv.FormatInt(size, 10))
 		rw.Header().Set("Content-Type", "application/octet-stream")
@@ -561,6 +605,11 @@ func (c *Agent) serveCachedBlob(rw http.ResponseWriter, r *http.Request, blob st
 		// fallback to redirect
 	}
 
+	referer := r.RemoteAddr
+	if info != nil {
+		referer = fmt.Sprintf("%d-%d:%s:%s/%s", t.RegistryID, t.TokenID, referer, info.Host, info.Image)
+	}
+
 	u, err := c.cache.RedirectBlob(r.Context(), blob, referer)
 	if err != nil {
 		c.logger.Info("failed to redirect blob", "digest", blob, "error", err)
@@ -569,7 +618,7 @@ func (c *Agent) serveCachedBlob(rw http.ResponseWriter, r *http.Request, blob st
 		return
 	}
 
-	c.blobCache.Put(info.Blobs, size)
+	c.blobCache.Put(info.Blobs, size, false)
 
 	c.logger.Info("Cache hit", "digest", blob, "url", u)
 	http.Redirect(rw, r, u, http.StatusTemporaryRedirect)
