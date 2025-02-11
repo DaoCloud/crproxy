@@ -31,6 +31,8 @@ type flagpole struct {
 	BigStorageURL  string
 	BigStorageSize int
 
+	ResumeSize int
+
 	StorageURL    []string
 	Quick         bool
 	Platform      []string
@@ -65,6 +67,8 @@ func NewCommand() *cobra.Command {
 	cmd.Flags().StringArrayVar(&flags.StorageURL, "storage-url", flags.StorageURL, "Storage driver url")
 	cmd.Flags().StringVar(&flags.BigStorageURL, "big-storage-url", flags.BigStorageURL, "Big storage driver url")
 	cmd.Flags().IntVar(&flags.BigStorageSize, "big-storage-size", flags.BigStorageSize, "Big storage size")
+	cmd.Flags().IntVar(&flags.ResumeSize, "resume-size", flags.ResumeSize, "Resume size")
+
 	cmd.Flags().StringVar(&flags.ManifestStorageURL, "manifest-storage-url", flags.ManifestStorageURL, "manifest storage driver url")
 	cmd.Flags().BoolVar(&flags.Quick, "quick", flags.Quick, "Quick sync with tags")
 	cmd.Flags().StringSliceVar(&flags.Platform, "platform", flags.Platform, "Platform")
@@ -195,6 +199,10 @@ func runE(ctx context.Context, flags *flagpole) error {
 			return fmt.Errorf("create cache failed: %w", err)
 		}
 		opts = append(opts, runner.WithManifestCache(manifestsdcache))
+	}
+
+	if flags.ResumeSize > 0 {
+		opts = append(opts, runner.WithResumeSize(flags.ResumeSize))
 	}
 
 	runner, err := runner.NewRunner(opts...)
