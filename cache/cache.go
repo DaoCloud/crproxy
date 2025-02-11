@@ -104,6 +104,15 @@ func (c *Cache) Redirect(ctx context.Context, blobPath string, referer string) (
 	return u, nil
 }
 
+func (c *Cache) Writer(ctx context.Context, cachePath string, append bool) (storagedriver.FileWriter, error) {
+	return c.storageDriver.Writer(ctx, cachePath, append)
+}
+
+func (c *Cache) BlobWriter(ctx context.Context, blob string, append bool) (storagedriver.FileWriter, error) {
+	cachePath := blobCachePath(blob)
+	return c.Writer(ctx, cachePath, append)
+}
+
 func (c *Cache) put(ctx context.Context, cachePath string, r io.Reader, checkFunc func(int64) error) (int64, error) {
 	fw, err := c.storageDriver.Writer(ctx, cachePath, false)
 	if err != nil {

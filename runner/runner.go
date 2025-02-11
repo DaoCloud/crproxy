@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"net/http"
 	"net/url"
 	"sort"
@@ -19,10 +20,14 @@ import (
 	"github.com/daocloud/crproxy/internal/spec"
 	"github.com/daocloud/crproxy/queue/client"
 	"github.com/daocloud/crproxy/queue/model"
+	"github.com/daocloud/crproxy/storage"
 	csync "github.com/daocloud/crproxy/sync"
+	"github.com/wzshiming/httpseek"
 )
 
 type Runner struct {
+	resumeSize int
+
 	bigCacheSize  int
 	bigCache      *cache.Cache
 	manifestCache *cache.Cache
@@ -93,6 +98,12 @@ func WithBigCache(cache *cache.Cache, size int) Option {
 func WithManifestCache(cache *cache.Cache) Option {
 	return func(c *Runner) {
 		c.manifestCache = cache
+	}
+}
+
+func WithResumeSize(resumeSize int) Option {
+	return func(c *Runner) {
+		c.resumeSize = resumeSize
 	}
 }
 
@@ -426,11 +437,137 @@ func (r *Runner) blob(ctx context.Context, host, name, blob string, size int64, 
 		r.logger.Info("skip blob by cache", "digest", blob)
 		return nil
 	}
-
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
 		return err
 	}
+
+	if r.resumeSize != 0 && size > int64(r.resumeSize) {
+		if len(subCaches) == 1 {
+			f, err := subCaches[0].BlobWriter(ctx, blob, true)
+			if err == nil {
+
+				seeker := httpseek.NewSeeker(ctx, http.DefaultTransport, req)
+
+				_, err = seeker.Seek(f.Size(), 0)
+				if err != nil {
+					return err
+				}
+
+				progress.Store(f.Size())
+
+				body := &readerCounter{
+					r:       seeker,
+					counter: progress,
+				}
+				_, err = io.Copy(f, body)
+				if err != nil {
+					return err
+				}
+
+				err = f.Commit()
+				if err != nil {
+					return err
+				}
+
+				fi, err := subCaches[0].StatBlob(ctx, blob)
+				if err != nil {
+					return err
+				}
+
+				if fi.Size() != size {
+					err := subCaches[0].DeleteBlob(ctx, blob)
+					if err != nil {
+						return fmt.Errorf("%s is %d, but expected %d: %w", blob, fi.Size(), size, err)
+					}
+					return fmt.Errorf("%s is %d, but expected %d", blob, fi.Size(), size)
+				}
+				return nil
+			}
+		} else {
+			var offset int64 = math.MaxInt
+
+			rbws := []storage.FileWriter{}
+			for _, cache := range subCaches {
+				f, err := cache.BlobWriter(ctx, blob, true)
+				if err == nil {
+					if offset != 0 {
+						offset = min(offset, f.Size())
+					}
+					rbws = append(rbws, f)
+
+				} else {
+					offset = 0
+					f, err = cache.BlobWriter(ctx, blob, false)
+					if err != nil {
+						return err
+					}
+					rbws = append(rbws, f)
+				}
+			}
+
+			var writers []io.Writer
+			for _, w := range rbws {
+				n := w.Size() - offset
+				if n == 0 {
+					writers = append(writers, w)
+				} else if n > 0 {
+					writers = append(writers, &skipWriter{
+						writer: w,
+						offset: uint64(n),
+					})
+				} else {
+					panic("crproxy.runner: resume write blob error")
+				}
+			}
+
+			seeker := httpseek.NewSeeker(ctx, http.DefaultTransport, req)
+
+			_, err := seeker.Seek(offset, 0)
+			if err != nil {
+				return err
+			}
+
+			progress.Store(offset)
+
+			body := &readerCounter{
+				r:       seeker,
+				counter: progress,
+			}
+
+			_, err = io.Copy(io.MultiWriter(writers...), body)
+			if err != nil {
+				return fmt.Errorf("copy blob failed: %w", err)
+			}
+
+			var errs []error
+			for _, c := range rbws {
+				err := c.Commit()
+				if err != nil {
+					errs = append(errs, err)
+				}
+			}
+
+			for _, cache := range subCaches {
+				fi, err := cache.StatBlob(ctx, blob)
+				if err != nil {
+					errs = append(errs, err)
+					continue
+				}
+
+				if fi.Size() != size {
+					if err := cache.DeleteBlob(ctx, blob); err != nil {
+						errs = append(errs, fmt.Errorf("%s is %d, but expected %d: %w", blob, fi.Size(), size, err))
+					} else {
+						errs = append(errs, fmt.Errorf("%s is %d, but expected %d", blob, fi.Size(), size))
+					}
+				}
+			}
+
+			return nil
+		}
+	}
+
 	resp, err := r.httpClient.Do(req)
 	if err != nil {
 		return err
@@ -868,4 +1005,26 @@ func (r *readerCounter) Read(b []byte) (int, error) {
 
 	r.counter.Add(int64(n))
 	return n, err
+}
+
+type skipWriter struct {
+	writer  io.Writer
+	offset  uint64
+	skipped uint64
+}
+
+func (w *skipWriter) Write(p []byte) (int, error) {
+	if w.skipped >= w.offset {
+		return w.writer.Write(p)
+	}
+
+	remaining := w.offset - w.skipped
+	if uint64(len(p)) <= remaining {
+		w.skipped += uint64(len(p))
+		return len(p), nil
+	}
+
+	w.skipped = w.offset
+	written, err := w.writer.Write(p[remaining:])
+	return int(remaining) + written, err
 }
