@@ -20,9 +20,12 @@ import (
 	"github.com/daocloud/crproxy/queue/client"
 	"github.com/daocloud/crproxy/queue/model"
 	csync "github.com/daocloud/crproxy/sync"
+	"github.com/wzshiming/httpseek"
 )
 
 type Runner struct {
+	resumeSize int
+
 	bigCacheSize  int
 	bigCache      *cache.Cache
 	manifestCache *cache.Cache
@@ -93,6 +96,12 @@ func WithBigCache(cache *cache.Cache, size int) Option {
 func WithManifestCache(cache *cache.Cache) Option {
 	return func(c *Runner) {
 		c.manifestCache = cache
+	}
+}
+
+func WithResumeSize(resumeSize int) Option {
+	return func(c *Runner) {
+		c.resumeSize = resumeSize
 	}
 }
 
@@ -425,6 +434,39 @@ func (r *Runner) blob(ctx context.Context, host, name, blob string, size int64, 
 	if len(subCaches) == 0 {
 		r.logger.Info("skip blob by cache", "digest", blob)
 		return nil
+	}
+
+	if r.resumeSize != 0 && size > int64(r.resumeSize) {
+		if len(subCaches) == 1 {
+			f, err := subCaches[0].ResumeBlobWriter(ctx, blob)
+			if err == nil {
+				req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+				if err != nil {
+					return err
+				}
+
+				seeker := httpseek.NewSeeker(ctx, http.DefaultTransport, req)
+
+				_, err = seeker.Seek(f.Size(), 0)
+				if err != nil {
+					return err
+				}
+
+				progress.Store(f.Size())
+
+				body := &readerCounter{
+					r:       seeker,
+					counter: progress,
+				}
+				_, err = io.Copy(f, body)
+				if err != nil {
+					return err
+				}
+				return nil
+			}
+		} else {
+			// TODO
+		}
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)

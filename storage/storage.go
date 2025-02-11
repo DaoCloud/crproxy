@@ -9,7 +9,10 @@ import (
 	"github.com/docker/distribution/registry/storage/driver/factory"
 )
 
-type StorageDriver = driver.StorageDriver
+type (
+	FileWriter    = driver.FileWriter
+	StorageDriver = driver.StorageDriver
+)
 
 func NewStorage(uri string) (StorageDriver, error) {
 	u, err := url.Parse(uri)
