@@ -16,12 +16,12 @@ import (
 	"github.com/daocloud/crproxy/internal/server"
 	"github.com/daocloud/crproxy/queue/client"
 	"github.com/daocloud/crproxy/signing"
-	"github.com/daocloud/crproxy/storage"
 	"github.com/daocloud/crproxy/token"
 	"github.com/daocloud/crproxy/transport"
 	"github.com/gorilla/handlers"
 	"github.com/spf13/cobra"
 	"github.com/wzshiming/httpseek"
+	"github.com/wzshiming/sss"
 )
 
 type flagpole struct {
@@ -119,7 +119,7 @@ func runE(ctx context.Context, flags *flagpole) error {
 		cache.WithSignLink(flags.SignLink),
 	}
 
-	sd, err := storage.NewStorage(flags.StorageURL)
+	sd, err := sss.NewSSS(sss.WithURL(flags.StorageURL))
 	if err != nil {
 		return fmt.Errorf("create storage driver failed: %w", err)
 	}
@@ -153,7 +153,7 @@ func runE(ctx context.Context, flags *flagpole) error {
 
 	if flags.BigStorageURL != "" && flags.BigStorageSize > 0 {
 		bigCacheOpts := []cache.Option{}
-		sd, err := storage.NewStorage(flags.BigStorageURL)
+		sd, err := sss.NewSSS(sss.WithURL(flags.BigStorageURL))
 		if err != nil {
 			return fmt.Errorf("create storage driver failed: %w", err)
 		}

@@ -10,11 +10,11 @@ import (
 	"strings"
 
 	"github.com/daocloud/crproxy/cache"
-	"github.com/daocloud/crproxy/storage"
 	csync "github.com/daocloud/crproxy/sync"
 	"github.com/daocloud/crproxy/transport"
 	"github.com/docker/distribution/manifest/manifestlist"
 	"github.com/spf13/cobra"
+	"github.com/wzshiming/sss"
 )
 
 type flagpole struct {
@@ -69,7 +69,7 @@ func runE(ctx context.Context, flags *flagpole) error {
 
 	var caches []*cache.Cache
 	for _, s := range flags.StorageURL {
-		sd, err := storage.NewStorage(s)
+		sd, err := sss.NewSSS(sss.WithURL(s))
 		if err != nil {
 			return fmt.Errorf("create storage driver failed: %w", err)
 		}

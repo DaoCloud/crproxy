@@ -7,14 +7,14 @@ import (
 	"path"
 	"strings"
 
-	storagedriver "github.com/docker/distribution/registry/storage/driver"
+	"github.com/wzshiming/sss"
 )
 
 func (c *Cache) RedirectBlob(ctx context.Context, blob string, referer string) (string, error) {
 	return c.Redirect(ctx, blobCachePath(blob), referer)
 }
 
-func (c *Cache) StatBlob(ctx context.Context, blob string) (storagedriver.FileInfo, error) {
+func (c *Cache) StatBlob(ctx context.Context, blob string) (sss.FileInfo, error) {
 	return c.Stat(ctx, blobCachePath(blob))
 }
 

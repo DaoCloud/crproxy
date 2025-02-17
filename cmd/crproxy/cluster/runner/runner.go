@@ -16,10 +16,10 @@ import (
 	"github.com/daocloud/crproxy/internal/spec"
 	"github.com/daocloud/crproxy/queue/client"
 	"github.com/daocloud/crproxy/runner"
-	"github.com/daocloud/crproxy/storage"
 	"github.com/daocloud/crproxy/transport"
 	"github.com/spf13/cobra"
 	"github.com/wzshiming/httpseek"
+	"github.com/wzshiming/sss"
 )
 
 type flagpole struct {
@@ -86,7 +86,7 @@ func runE(ctx context.Context, flags *flagpole) error {
 
 	var caches []*cache.Cache
 	for _, s := range flags.StorageURL {
-		sd, err := storage.NewStorage(s)
+		sd, err := sss.NewSSS(sss.WithURL(s))
 		if err != nil {
 			return fmt.Errorf("create storage driver failed: %w", err)
 		}
@@ -171,7 +171,7 @@ func runE(ctx context.Context, flags *flagpole) error {
 
 	if flags.BigStorageURL != "" && flags.BigStorageSize > 0 {
 		bigCacheOpts := []cache.Option{}
-		sd, err := storage.NewStorage(flags.BigStorageURL)
+		sd, err := sss.NewSSS(sss.WithURL(flags.BigStorageURL))
 		if err != nil {
 			return fmt.Errorf("create storage driver failed: %w", err)
 		}
@@ -187,7 +187,7 @@ func runE(ctx context.Context, flags *flagpole) error {
 
 	if flags.ManifestStorageURL != "" {
 		manifestCacheOpts := []cache.Option{}
-		sd, err := storage.NewStorage(flags.ManifestStorageURL)
+		sd, err := sss.NewSSS(sss.WithURL(flags.ManifestStorageURL))
 		if err != nil {
 			return fmt.Errorf("create storage driver failed: %w", err)
 		}

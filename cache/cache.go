@@ -7,19 +7,18 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"net/http"
 	"net/url"
 	"path"
 	"strings"
 	"sync"
 	"time"
 
-	storagedriver "github.com/docker/distribution/registry/storage/driver"
+	"github.com/wzshiming/sss"
 )
 
 type Cache struct {
 	bytesPool     sync.Pool
-	storageDriver storagedriver.StorageDriver
+	storageDriver *sss.SSS
 	linkExpires   time.Duration
 	signLink      bool
 	redirectLinks *url.URL
@@ -39,7 +38,7 @@ func WithRedirectLinks(l *url.URL) Option {
 	}
 }
 
-func WithStorageDriver(storageDriver storagedriver.StorageDriver) Option {
+func WithStorageDriver(storageDriver *sss.SSS) Option {
 	return func(c *Cache) {
 		c.storageDriver = storageDriver
 	}
@@ -76,19 +75,9 @@ func (c *Cache) Redirect(ctx context.Context, blobPath string, referer string) (
 		return u.String(), nil
 	}
 
-	options := map[string]interface{}{
-		"method": http.MethodGet,
-	}
-
 	linkExpires := c.linkExpires
-	if linkExpires > 0 {
-		options["expiry"] = time.Now().Add(linkExpires)
-	}
 
-	if referer != "" {
-		options["referer"] = referer
-	}
-	u, err := c.storageDriver.URLFor(ctx, blobPath, options)
+	u, err := c.storageDriver.SignGet(blobPath, linkExpires)
 	if err != nil {
 		return "", err
 	}
@@ -104,11 +93,14 @@ func (c *Cache) Redirect(ctx context.Context, blobPath string, referer string) (
 	return u, nil
 }
 
-func (c *Cache) Writer(ctx context.Context, cachePath string, append bool) (storagedriver.FileWriter, error) {
-	return c.storageDriver.Writer(ctx, cachePath, append)
+func (c *Cache) Writer(ctx context.Context, cachePath string, append bool) (sss.FileWriter, error) {
+	if append {
+		return c.storageDriver.WriterWithAppend(ctx, cachePath)
+	}
+	return c.storageDriver.Writer(ctx, cachePath)
 }
 
-func (c *Cache) BlobWriter(ctx context.Context, blob string, append bool) (storagedriver.FileWriter, error) {
+func (c *Cache) BlobWriter(ctx context.Context, blob string, append bool) (sss.FileWriter, error) {
 	cachePath := blobCachePath(blob)
 
 	if append {
@@ -127,7 +119,7 @@ func (c *Cache) BlobWriter(ctx context.Context, blob string, append bool) (stora
 }
 
 func (c *Cache) put(ctx context.Context, cachePath string, r io.Reader, checkFunc func(int64) error) (int64, error) {
-	fw, err := c.storageDriver.Writer(ctx, cachePath, false)
+	fw, err := c.storageDriver.Writer(ctx, cachePath)
 	if err != nil {
 		return 0, err
 	}
@@ -137,19 +129,17 @@ func (c *Cache) put(ctx context.Context, cachePath string, r io.Reader, checkFun
 
 	n, err := io.CopyBuffer(fw, r, buf)
 	if err != nil {
-		fw.Cancel()
 		return 0, err
 	}
 
 	if checkFunc != nil {
 		err = checkFunc(n)
 		if err != nil {
-			fw.Cancel()
 			return 0, err
 		}
 	}
 
-	err = fw.Commit()
+	err = fw.Commit(ctx)
 	if err != nil {
 		return 0, err
 	}
@@ -183,23 +173,23 @@ func (c *Cache) Delete(ctx context.Context, cachePath string) error {
 }
 
 func (c *Cache) Get(ctx context.Context, cachePath string) (io.ReadCloser, error) {
-	return c.storageDriver.Reader(ctx, cachePath, 0)
+	return c.storageDriver.Reader(ctx, cachePath)
 }
 
 func (c *Cache) GetWithOffset(ctx context.Context, cachePath string, offset int64) (io.ReadCloser, error) {
-	return c.storageDriver.Reader(ctx, cachePath, offset)
+	return c.storageDriver.ReaderWithOffset(ctx, cachePath, offset)
 }
 
 func (c *Cache) GetContent(ctx context.Context, cachePath string) ([]byte, error) {
 	return c.storageDriver.GetContent(ctx, cachePath)
 }
 
-func (c *Cache) Stat(ctx context.Context, cachePath string) (storagedriver.FileInfo, error) {
+func (c *Cache) Stat(ctx context.Context, cachePath string) (sss.FileInfo, error) {
 	return c.storageDriver.Stat(ctx, cachePath)
 }
 
 func (c *Cache) Walk(ctx context.Context, cachePath string, fun fs.WalkDirFunc) error {
-	return c.storageDriver.Walk(ctx, cachePath, func(fi storagedriver.FileInfo) error {
+	return c.storageDriver.Walk(ctx, cachePath, func(fi sss.FileInfo) error {
 		p := fi.Path()
 		fiw := fileInfoWrap{
 			name:     path.Base(p),
@@ -211,12 +201,20 @@ func (c *Cache) Walk(ctx context.Context, cachePath string, fun fs.WalkDirFunc) 
 }
 
 func (c *Cache) List(ctx context.Context, cachePath string) ([]string, error) {
-	return c.storageDriver.List(ctx, cachePath)
+	list := []string{}
+	err := c.storageDriver.List(ctx, cachePath, func(fileInfo sss.FileInfo) bool {
+		list = append(list, fileInfo.Path())
+		return true
+	})
+	if err != nil {
+		return nil, err
+	}
+	return list, nil
 }
 
 type fileInfoWrap struct {
 	name string
-	storagedriver.FileInfo
+	sss.FileInfo
 }
 
 var _ fs.DirEntry = (*fileInfoWrap)(nil)

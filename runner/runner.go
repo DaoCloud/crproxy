@@ -21,9 +21,9 @@ import (
 	"github.com/daocloud/crproxy/internal/spec"
 	"github.com/daocloud/crproxy/queue/client"
 	"github.com/daocloud/crproxy/queue/model"
-	"github.com/daocloud/crproxy/storage"
 	csync "github.com/daocloud/crproxy/sync"
 	"github.com/wzshiming/httpseek"
+	"github.com/wzshiming/sss"
 )
 
 type Runner struct {
@@ -466,7 +466,7 @@ func (r *Runner) blob(ctx context.Context, host, name, blob string, size int64, 
 					return err
 				}
 
-				err = f.Commit()
+				err = f.Commit(ctx)
 				if err != nil {
 					return err
 				}
@@ -488,7 +488,7 @@ func (r *Runner) blob(ctx context.Context, host, name, blob string, size int64, 
 		} else {
 			var offset int64 = math.MaxInt
 
-			rbws := []storage.FileWriter{}
+			rbws := []sss.FileWriter{}
 			for _, cache := range subCaches {
 				f, err := cache.BlobWriter(ctx, blob, true)
 				if err == nil {
@@ -547,7 +547,7 @@ func (r *Runner) blob(ctx context.Context, host, name, blob string, size int64, 
 
 			var errs []error
 			for _, c := range rbws {
-				err := c.Commit()
+				err := c.Commit(ctx)
 				if err != nil {
 					errs = append(errs, err)
 				}

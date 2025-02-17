@@ -8,10 +8,6 @@ import (
 	csync "github.com/daocloud/crproxy/cmd/crproxy/sync"
 	"github.com/daocloud/crproxy/internal/signals"
 	"github.com/spf13/cobra"
-
-	_ "github.com/daocloud/crproxy/storage/driver/obs"
-	_ "github.com/daocloud/crproxy/storage/driver/oss"
-	_ "github.com/daocloud/crproxy/storage/driver/s3"
 )
 
 func init() {
