@@ -11,6 +11,8 @@ type throttledReader struct {
 	r       io.Reader
 	limiter *rate.Limiter
 	ctx     context.Context
+
+	burst int
 }
 
 func NewThrottledReader(ctx context.Context, r io.Reader, limiter *rate.Limiter) io.Reader {
@@ -18,11 +20,12 @@ func NewThrottledReader(ctx context.Context, r io.Reader, limiter *rate.Limiter)
 		r:       r,
 		limiter: limiter,
 		ctx:     ctx,
+		burst:   limiter.Burst(),
 	}
 }
 
 func (r *throttledReader) Read(p []byte) (n int, err error) {
-	n, err = r.r.Read(p)
+	n, err = r.r.Read(p[:min(len(p), r.burst)])
 	if err != nil {
 		return n, err
 	}

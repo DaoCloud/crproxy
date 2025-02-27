@@ -123,7 +123,7 @@ func WithBlobNoRedirectSize(blobNoRedirectSize int) Option {
 func WithBlobNoRedirectMaxSizePerSecond(blobNoRedirectMaxSizePerSecond int) Option {
 	return func(c *Agent) error {
 		if blobNoRedirectMaxSizePerSecond > 0 {
-			c.blobNoRedirectLimit = rate.NewLimiter(rate.Limit(blobNoRedirectMaxSizePerSecond), 1024)
+			c.blobNoRedirectLimit = rate.NewLimiter(rate.Limit(blobNoRedirectMaxSizePerSecond), 32*1024)
 		} else {
 			c.blobNoRedirectLimit = nil
 		}
@@ -640,7 +640,7 @@ func (c *Agent) serveCachedBlob(rw http.ResponseWriter, r *http.Request, blob st
 
 		var body io.Reader = data
 		if t.RateLimitPerSecond > 0 {
-			limit := rate.NewLimiter(rate.Limit(t.RateLimitPerSecond), 1024)
+			limit := rate.NewLimiter(rate.Limit(t.RateLimitPerSecond), 16*1024)
 			body = throttled.NewThrottledReader(ctx, body, limit)
 		}
 
