@@ -73,6 +73,11 @@ func (c *CRProxy) cacheManifestResponse(rw http.ResponseWriter, r *http.Request,
 		}
 	}
 
+	if resp.StatusCode == http.StatusTooManyRequests {
+		c.errorResponse(rw, r, fmt.Errorf("origin response 429"))
+		return
+	}
+
 	resp.Header.Del("Docker-Ratelimit-Source")
 
 	header := rw.Header()
