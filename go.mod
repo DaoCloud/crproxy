@@ -1,6 +1,6 @@
 module github.com/daocloud/crproxy
 
-go 1.22
+go 1.24.0
 
 require (
 	github.com/denverdino/aliyungo v0.0.0-20230411124812-ab98a9173ace
@@ -15,7 +15,7 @@ require (
 	github.com/wzshiming/hostmatcher v0.0.3
 	github.com/wzshiming/httpseek v0.1.0
 	github.com/wzshiming/lru v0.1.0
-	golang.org/x/crypto v0.28.0
+	golang.org/x/crypto v0.45.0
 )
 
 replace github.com/docker/distribution => github.com/distribution/distribution v2.8.3+incompatible
@@ -59,10 +59,10 @@ require (
 	github.com/stretchr/testify v1.8.4 // indirect
 	github.com/wzshiming/trie v0.3.1 // indirect
 	go.opencensus.io v0.24.0 // indirect
-	golang.org/x/net v0.30.0 // indirect
+	golang.org/x/net v0.47.0 // indirect
 	golang.org/x/oauth2 v0.23.0 // indirect
-	golang.org/x/sys v0.26.0 // indirect
-	golang.org/x/text v0.19.0 // indirect
+	golang.org/x/sys v0.38.0 // indirect
+	golang.org/x/text v0.31.0 // indirect
 	google.golang.org/api v0.126.0 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
 	google.golang.org/cloud v0.0.0-20151119220103-975617b05ea8 // indirect
