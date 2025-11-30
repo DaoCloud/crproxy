@@ -1,6 +1,6 @@
 module github.com/daocloud/crproxy
 
-go 1.22
+go 1.23.0
 
 require (
 	github.com/denverdino/aliyungo v0.0.0-20230411124812-ab98a9173ace
@@ -60,7 +60,7 @@ require (
 	github.com/wzshiming/trie v0.3.1 // indirect
 	go.opencensus.io v0.24.0 // indirect
 	golang.org/x/net v0.30.0 // indirect
-	golang.org/x/oauth2 v0.23.0 // indirect
+	golang.org/x/oauth2 v0.27.0 // indirect
 	golang.org/x/sys v0.26.0 // indirect
 	golang.org/x/text v0.19.0 // indirect
 	google.golang.org/api v0.126.0 // indirect
